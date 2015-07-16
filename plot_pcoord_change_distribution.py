@@ -247,13 +247,17 @@ class PCoordAnalyzer:
         using values from ``self.xedges`` and ``self.yedges`` to specify the 
         extent of the histogram. 
         '''
+        if self.args.counts is True:
+            vmax_val = self.H.max() 
+        else:
+            vmax_val = 1
         pyplot.pcolormesh(self.xedges, 
                           self.yedges, 
                           self.H.transpose(), 
                           cmap='hot', 
                           edgecolors='None', 
                           vmin=0, 
-                          vmax=1,
+                          vmax=vmax_val,
                           rasterized=True)
 
 
@@ -315,7 +319,6 @@ class PCoordAnalyzer:
                           ymin=lower,
                           ymax=upper,
                           color='cyan')
-            print("plotting line at x=%f from ymin=%f to ymax=%f"%(lower,lower,upper))
             pyplot.vlines(x=upper,
                           ymin=lower,
                           ymax=upper,
@@ -333,7 +336,10 @@ class PCoordAnalyzer:
         pyplot.xlim((self.xedges[0],self.xedges[-1]))
         pyplot.ylim((self.yedges[0],self.yedges[-1]))
         cbar = pyplot.colorbar()
-        cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
+        if self.args.counts is True:
+            cbar.set_label("Average Number of Walkers that Transition per Iteration")
+        else:
+            cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
         pyplot.xlabel('Progress Coordinate Value at Beginning of Iteration')
         pyplot.ylabel('Change in Progress Coordinate Value Over Iteration') 
         #ax = pyplot.subplot(111)
@@ -347,7 +353,10 @@ class PCoordAnalyzer:
         pyplot.xlim((self.xedges[0],self.xedges[-1]))
         pyplot.ylim((self.yedges[0],self.yedges[-1]))
         cbar = pyplot.colorbar()
-        cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
+        if self.args.counts is True:
+            cbar.set_label("Average Number of Walkers that Transition per Iteration")
+        else:
+            cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
         pyplot.xlabel('Progress Coordinate Value at Beginning of Iteration')
         pyplot.ylabel('Progress Coordinate Value at End of Iteration') 
 
