@@ -73,6 +73,11 @@ class PCoordAnalyzer:
                                  'as the change in the progress coordinate '
                                  'value over the iteration.',
                             type=str)
+        parser.add_argument('--counts', dest='counts', default=False,
+                            help='Plot walker counts rather than probabilties.'
+                                 ' Color values denote the average i -> j '
+                                 'transition count per iteration.',
+                            type=bool)
         self.args = parser.parse_args()
         if not (self.args.mode == 'plot_values' or
                 self.args.mode == 'plot_delta'):
@@ -145,9 +150,12 @@ class PCoordAnalyzer:
             # change in the progress coordinate value over the iteration,
             # and weights of each segment in ``self.value_array`` and
             # ``self.weight_array``.
-            self.value_array[index][:weights.shape[0],0] = pcoord_starts 
-            self.value_array[index][:weights.shape[0],1] = pcoord_changes
-            self.weight_array[index][:weights.shape[0],0] = weights 
+            self.value_array[index, :weights.shape[0],0] = pcoord_starts 
+            self.value_array[index, :weights.shape[0],1] = pcoord_changes
+            if self.args.counts is True:
+                self.weight_array[index, :weights.shape[0], 0] = 1
+            else:
+                self.weight_array[index, :weights.shape[0],0] = weights 
 
     def _calculate_pcoord_vs_pcoord(self):
         '''
@@ -172,7 +180,10 @@ class PCoordAnalyzer:
             # ``self.weight_array``.
             self.value_array[index, :weights.shape[0], 0] = pcoord_starts 
             self.value_array[index, :weights.shape[0], 1] = pcoord_ends
-            self.weight_array[index, :weights.shape[0], 0] = weights 
+            if self.args.counts is True:
+                self.weight_array[index, :weights.shape[0], 0] = 1 
+            else:
+                self.weight_array[index, :weights.shape[0], 0] = weights 
 
     def _histogram(self):
         '''
@@ -204,7 +215,6 @@ class PCoordAnalyzer:
         if self.args.mode == 'plot_values':
             self.ybins = self.xbins
         bins_ = [numpy.array(self.xbins), numpy.array(self.ybins)] 
-        print(bins_)
         xvals = self.value_array[:,:,0][...].ravel()
         yvals = self.value_array[:,:,1][...].ravel()
         weights_ = self.weight_array.ravel()
@@ -214,10 +224,20 @@ class PCoordAnalyzer:
                                               weights=weights_)
         # Normalize along so each column along the x axis sums to 1.
         # In other words, the total probabilty per propagation bin is ``1``.
-        column_sums = H.sum(axis=0)
-        normed_H = H / column_sums[numpy.newaxis, :]
-        #normed_H[:,column_sums == 0] = 0 
+        column_sums = H.sum(axis=1)
+
+        # If the user specified to use the ``counts`` mode, then normalize by 
+        # dividing by the total number of iterations.  This gives the average 
+        # transition count per iteration.
+        if self.args.counts is True:
+            column_sums[:] = len(self.iter_range) 
+        normed_H = H / column_sums[:, numpy.newaxis]
+
+        # Take care of ``nan`` and ``inf`` values that could arise if a column
+        # sums to zero.
         normed_H[H==0] = 0
+
+        # Save the histogram and its edges as an attribute.
         self.H = normed_H
         self.xedges = xedges
         self.yedges = yedges
@@ -227,9 +247,6 @@ class PCoordAnalyzer:
         using values from ``self.xedges`` and ``self.yedges`` to specify the 
         extent of the histogram. 
         '''
-        #extent_ = [self.xbins[0], self.xbins[-1], self.ybins[0], self.ybins[-1]]
-        #extent_ = [self.xedges[0], self.xedges[-1], self.yedges[0], self.yedges[-1]]
-        #asp = float(extent_[1]-extent_[0])/(extent_[3]-extent_[2])
         pyplot.pcolormesh(self.xedges, 
                           self.yedges, 
                           self.H.transpose(), 
@@ -240,13 +257,6 @@ class PCoordAnalyzer:
                           rasterized=True)
 
 
-        #pyplot.imshow(self.H.transpose(), 
-        #              extent=extent_,
-        #              origin='lower', 
-        #              aspect=asp, 
-        #              cmap='hot',
-        #              interpolation='None')
-        #pyplot.savefig('pcoord_analysis.pdf')
     def _plot_bins_delta_pcoord(self):
         for binbound in self.xbins:
             pyplot.axvline(binbound,color='gray',linewidth=.5)
@@ -299,29 +309,31 @@ class PCoordAnalyzer:
 
     def _plot_bins_pcoord_vs_pcoord(self):
         for ibin, binbound in enumerate(self.xbins[:-1]):
-            pyplot.axvline(binbound,
-                           ymin=binbound,
-                           ymax=self.xbins[ibin+1],
-                           color='cyan')
-            print("plotting line at x=%f from ymin=%f to ymax=%f"%(binbound,binbound,self.xbins[ibin+1]))
-            pyplot.axvline(self.xbins[ibin+1],
-                           ymin=binbound,
-                           ymax=self.xbins[ibin+1],
-                           color='cyan')
-            pyplot.axhline(binbound,
-                           xmin=binbound,
-                           xmax=self.xbins[ibin+1],
-                           color='cyan')
-            pyplot.axhline(self.xbins[ibin+1],
-                           xmin=binbound,
-                           xmax=self.xbins[ibin+1],
-                           color='cyan')
+            lower = binbound
+            upper = self.xbins[ibin+1]
+            pyplot.vlines(x=lower,
+                          ymin=lower,
+                          ymax=upper,
+                          color='cyan')
+            print("plotting line at x=%f from ymin=%f to ymax=%f"%(lower,lower,upper))
+            pyplot.vlines(x=upper,
+                          ymin=lower,
+                          ymax=upper,
+                          color='cyan')
+            pyplot.hlines(y=lower,
+                          xmin=lower,
+                          xmax=upper,
+                          color='cyan')
+            pyplot.hlines(y=upper,
+                          xmin=lower,
+                          xmax=upper,
+                          color='cyan')
 
     def _set_plot_style_delta_pcoord(self):
         pyplot.xlim((self.xedges[0],self.xedges[-1]))
         pyplot.ylim((self.yedges[0],self.yedges[-1]))
         cbar = pyplot.colorbar()
-        cbar.set_label("Probability")
+        cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
         pyplot.xlabel('Progress Coordinate Value at Beginning of Iteration')
         pyplot.ylabel('Change in Progress Coordinate Value Over Iteration') 
         #ax = pyplot.subplot(111)
@@ -335,7 +347,7 @@ class PCoordAnalyzer:
         pyplot.xlim((self.xedges[0],self.xedges[-1]))
         pyplot.ylim((self.yedges[0],self.yedges[-1]))
         cbar = pyplot.colorbar()
-        cbar.set_label("Probability")
+        cbar.set_label("Probability, Normalized to 1 for Each \nStarting Progress Coordinate Bin")
         pyplot.xlabel('Progress Coordinate Value at Beginning of Iteration')
         pyplot.ylabel('Progress Coordinate Value at End of Iteration') 
 
