@@ -107,6 +107,12 @@ class ContourPlotter:
                                   'math':math,
                                   'inf':float('inf')}
         bins_ = eval(binexpr,self.binexpr_namespace)
+        if float('inf') in bins_:
+            print("Warning! One of the bin boundaries is 'inf' (infinity). " 
+                  "Attempting to make a normalized histogram with a bin " 
+                  "boundary at infinity does NOT make sense. Please check your "
+                  "bin boundaries and try again.")
+            exit(1)
         return bins_
 
     def _make_bin_bounds(self):
@@ -147,6 +153,14 @@ class ContourPlotter:
         ``loadtxt`` method of the main numpy module.
         '''
         self.data = numpy.loadtxt(self.args.coords)
+    def _load_from_plothist_HDF5(self):
+        '''
+        Load data from an HDF5 file.  This method assumes the HDF5 file 
+        structure is the same as the WESTPA tool ``plothist`` would output.
+
+        Currently, this method is only a placeholder.
+        '''
+        pass
 
     def _histogram(self):
         '''
@@ -208,18 +222,32 @@ class ContourPlotter:
         # Add a label to the colorbar.
         cbar.set_label('$\Delta G/k_BT$')
 
-    def _add_plot_labels(self):
+    def _format_plot(self):
+        '''
+        Add axis labels and a plot title, if the user specified them.
+        Also, change the bounds of the plot to match the minimum and maximum
+        values for the bin boundaries along the x- and y-axis.
+        '''
         if self.args.xlabel is not None:
             pylab.xlabel(self.args.xlabel)
         if self.args.ylabel is not None:
             pylab.ylabel(self.args.ylabel)
+        if self.args.title is not None:
+            pylab.title(self.args.title)
+        pylab.xlim(self.xedges[0],self.xedges[-1])
+        pylab.ylim(self.yedges[0],self.yedges[-1])
 
     def run(self):
+        '''
+        Main public method of the ContourPlotter class. Call this method to 
+        load data, histogram the data, plot a contour plot, and save the 
+        contour plot to a file.
+        '''
         self._load_from_text_file()
         self._histogram()
         self._edges_to_midpoints()
         self._make_energy_contour_plot()
-        self._add_plot_labels()
+        self._format_plot()
         pylab.savefig(self.args.output_path)
 
 if __name__ == "__main__":
