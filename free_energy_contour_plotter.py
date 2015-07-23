@@ -9,7 +9,7 @@ import scipy.ndimage
 import numpy.ma as ma
 
 '''
-Class to plot contour maps of free energy
+Class to plot contour maps of free energy. See --help for options.
 '''
 
 class ContourPlotter:
@@ -38,10 +38,11 @@ class ContourPlotter:
                           type=str)
         parser.add_argument('--pdist-axes', default=(0,1),
                           dest='pdist_axes',
-                          help='The axes of the w_pdist file that this script '
-                               'should plot. Specify as a string that can be '
-                               'parsed as an iteratable (for example, a '
-                               'tuple). Use with ``--pdist-input``.',
+                          help='Plot PDIST_AXES of the w_pdist file specified '
+                               'with ``--pdist-input`` PDIST_AXES should be a '
+                               'string that can be parsed as a Python tuple '
+                               'or list with two elements (for example, '
+                               '``(0,1)``. Use with ``--pdist-input``.',
                           type=str)
         parser.add_argument('--first-iter', default=None,
                           dest='first_iter',
@@ -85,10 +86,10 @@ class ContourPlotter:
                             type=str)
         parser.add_argument('--zbins', default=10,
                             dest='zbins',
-                            help='The number of bins to use for histogramming' 
+                            help='Use ZBINS number of bins for histogramming' 
                                  'along the z-axis.  Divide the range between '
-                                 'the minimum and maxium observed z-value '
-                                 ' into this many bins.',
+                                 'ZMIN and ZMAX (or the minimum and maxium '
+                                 'observed z-value into this many bins.',
                             type=int)
         parser.add_argument('--zbinexpr', default=None,
                             dest='zbinexpr',
@@ -97,17 +98,17 @@ class ContourPlotter:
                             type=str)
         parser.add_argument('--zmax', default=None,
                             dest='zmax',
-                            help='The maximum value to plot along the z-axis '
-                                 '(that is, the color scale). By default, use '
-                                 'the maximum observed value. The ' 
+                            help='Use ZMAX as the maximum value to plot along '
+                                 'the z-axis (that is, the color scale). By '
+                                 'default, use the maximum observed value. The ' 
                                  '``--zbinexpr`` option will override this '
                                  'option.',
                             type=float)
         parser.add_argument('--zmin', default=None,
                             dest='zmin',
-                            help='The minimum value to plot along the z-axis '
-                                 '(that is, the color scale). By default, use ' 
-                                 'the minimum observed value. The '
+                            help='Use ZMIN as the minimum value to plot along '
+                                 'the z-axis (that is, the color scale). By '
+                                 'default, use the minimum observed value. The '
                                  '``--zbinexpr`` option will override this '
                                  'option.',
                             type=float)
@@ -145,22 +146,22 @@ class ContourPlotter:
                             type=str)
         parser.add_argument('--xlabel', default=None,
                             dest='xlabel',
-                            help='A string to use as the label for the x-axis.'
-                                 ' The x-axis with be the zero-th dimension of '
-                                 'the dataset you supply.',
+                            help='Use XLABEL as a label for the x-axis, '
+                                 'where the x-axis with be the zero-th '
+                                 'dimension the dataset you supply.',
                             type=str)
         parser.add_argument('--ylabel', default=None,
                             dest='ylabel',
-                            help='A string to use as the label for the y-axis.'
-                                 ' The y-axis with be the first dimension of '
-                                 'the dataset you supply.',
+                            help='Use YLABEL as a label for the y-axis, '
+                                 'where the y-axis with be the first '
+                                 'dimension the dataset you supply.',
                             type=str)
 
         # Plot style and data smoothing options
         parser.add_argument('--cmap', default='hot_r',
                             dest='cmap',
-                            help='The colormap to use for the z-axis of the ' 
-                                 'contour plot. Ex: ``hot``,``jet``,``RdBu``. '
+                            help='Use the colormap CMAP for the z-axis of the ' 
+                                 'plot. Ex: ``hot``,``jet``,``RdBu``. '
                                  'See MatPlotLib documentation for more '
                                  'options.',
                             type=str)
@@ -176,7 +177,7 @@ class ContourPlotter:
                                  'levels) using a gaussian filter with sigma='
                                  'CURVE_SMOOTHING_LEVEL.',
                             type=float)
-        parser.add_argument('--plot-mode', default = 'contourf',
+        parser.add_argument('--plot-mode', default = 'contourf_l',
                             dest='plot_mode',
                             help='Use plotting mode PLOT_MODE. Options are: '
                                  '``contourf``--plot contour levels. '
@@ -210,7 +211,7 @@ class ContourPlotter:
                                        'contourf_l',
                                        'histogram_l']:
             print('Plot mode ``%s`` is not a valid option. See ``--help`` for '
-                  'more information.')
+                  'more information.' % self.args.plot_mode)
             exit(1)
         else:
             self.plot_mode = self.args.plot_mode
@@ -232,9 +233,9 @@ class ContourPlotter:
         if float('inf') in bins_:
             print("Warning! One of the bin boundaries is 'inf' (infinity). " 
                   "Attempting to make a normalized histogram with a bin " 
-                  "boundary at infinity does NOT make sense. Please check your "
-                  "bin boundaries and try again.")
-            exit(1)
+                  "boundary at infinity does NOT make sense. It only makes "
+                  "sense to use 'inf' when specifying bin boundaries for the "
+                  "z-axis."
         return bins_
 
     def _make_bin_bounds(self):
@@ -480,8 +481,8 @@ class ContourPlotter:
         self.cmap.set_bad(color='white')
         p = pylab.pcolormesh(X, Y, Zm.T, 
                              cmap=self.cmap,
-                             vmin=self.zmin,
-                             vmax=self.zmax)
+                             vmin=self.zedges[0],
+                             vmax=self.zedges[-1])
         p.set_edgecolor('face')
 
         # Add a colorbar
@@ -497,8 +498,8 @@ class ContourPlotter:
         self.cmap.set_bad(color='white')
         p = pylab.pcolormesh(X, Y, Zm.T, 
                              cmap=self.cmap,
-                             vmin=self.zmin,
-                             vmax=self.zmax)
+                             vmin=self.zedges[0],
+                             vmax=self.zedges[-1])
 
         # Get rid of lines between cells
         p.set_edgecolor('face')
@@ -525,7 +526,8 @@ class ContourPlotter:
         # Take care of 'inf' values.
         self.Z[self.H==0] = numpy.nan 
 
-        # Do data smoothing
+        # Do data smoothing. We have to make copies of the array so that
+        # the data and curves can have different smoothing levels.
         self.Z_data = numpy.copy(self.Z)
         self.Z_curves = numpy.copy(self.Z)
         self._smooth()
