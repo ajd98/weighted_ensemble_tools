@@ -235,7 +235,7 @@ class ContourPlotter:
                   "Attempting to make a normalized histogram with a bin " 
                   "boundary at infinity does NOT make sense. It only makes "
                   "sense to use 'inf' when specifying bin boundaries for the "
-                  "z-axis."
+                  "z-axis.")
         return bins_
 
     def _make_bin_bounds(self):
