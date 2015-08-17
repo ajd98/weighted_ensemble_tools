@@ -156,6 +156,19 @@ class ContourPlotter:
                                  'where the y-axis with be the first '
                                  'dimension the dataset you supply.',
                             type=str)
+        parser.add_argument('--xrange', default=None,
+                            dest='xplotrange',
+                            help='Extend or restrict the x-axis to include '
+                                 'values in XPLOTRANGE. XPLOTRANGE should '
+                                 'be a str that Python can parse as a tuple.'
+                            )
+        parser.add_argument('--yrange', default=None,
+                            dest='yplotrange',
+                            help='Extend or restrict the y-axis to include '
+                                 'values in YPLOTRANGE. YPLOTRANGE should '
+                                 'be a str that Python can parse as a tuple.'
+                            )
+
 
         # Plot style and data smoothing options
         parser.add_argument('--cmap', default='hot_r',
@@ -186,7 +199,15 @@ class ContourPlotter:
                                  '``contourf_l``--plot contour levels and lines. '
                                  '``histogram_l``--plot histogram and contour lines. ',
                             type=str)
-                                 
+        parser.add_argument('--postprocess', default = None,
+                            dest='postprocess_func',
+                            help='After plotting data, load and execute the '
+                                 'Python function specified by '
+                                 'POSTPROCESS_FUNC. POSTPROCESS_FUNC should be '
+                                 'a string of the form ``mymodule.myfunction``.'
+                                 'Example: '
+                                 '``--postprocess mymodule.myfunction``.'
+                            )     
         self.args = parser.parse_args()
 
         # Figure out what kind of input to use.
@@ -218,6 +239,11 @@ class ContourPlotter:
 
         self.data_smoothing_level = self.args.data_smoothing_level
         self.curve_smoothing_level = self.args.curve_smoothing_level
+
+        if self.args.xplotrange is not None:
+            self.xplotrange = self._get_bins_from_expr(self.args.xplotrange)
+        if self.args.yplotrange is not None:
+            self.yplotrange = self._get_bins_from_expr(self.args.yplotrange)
 
 
     def _get_bins_from_expr(self, binexpr):
@@ -521,7 +547,7 @@ class ContourPlotter:
         self.Z = -1*numpy.log(self.H)
 
         # Make everything relative to minimum, at zero.
-        self.Z -= self.Z.min()
+        self.Z -= numpy.nanmin(self.Z)
 
         # Take care of 'inf' values.
         self.Z[self.H==0] = numpy.nan 
@@ -562,17 +588,33 @@ class ContourPlotter:
             pylab.ylabel(self.args.ylabel)
         if self.args.title is not None:
             pylab.title(self.args.title)
-        if self.args.xcontact_count is None:
+        if self.args.xplotrange is not None:
+            pylab.xlim(self.xplotrange[0], self.xplotrange[1])
+        elif self.args.xcontact_count is None:
             pylab.xlim(self.xedges[0],self.xedges[-1])
         else:
             pylab.xlim(0,1)
-        if self.args.ycontact_count is None:
+        if self.args.yplotrange is not None:
+            pylab.ylim(self.yplotrange[0], self.yplotrange[1])
+        elif self.args.ycontact_count is None:
             pylab.ylim(self.yedges[0],self.yedges[-1])
         else:
             pylab.ylim(0,1)
 
         # Add a label to the colorbar.
         self.cbar.set_label('$\Delta G/k_BT$')
+    def _run_postprocessing(self):
+        '''
+        Run the user-specified postprocessing function.
+        '''
+        import importlib
+        # Parse the user-specifed string for the module and class/function name.
+        module_name, attr_name = self.args.postprocess_func.split('.', 1) 
+        # import the module ``module_name`` and make the function/class 
+        # accessible as ``attr``.
+        attr = getattr(importlib.import_module(module_name), attr_name) 
+        # Call ``attr``.
+        attr()
 
     def run(self):
         '''
@@ -590,6 +632,8 @@ class ContourPlotter:
             self._edges_to_midpoints()
         self._make_plot()
         self._format_plot()
+        if self.args.postprocess_func is not None:
+            self._run_postprocessing()
         pylab.savefig(self.args.output_path)
 
 if __name__ == "__main__":
