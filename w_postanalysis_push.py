@@ -259,7 +259,6 @@ Command-line options
             new_weights = np.array(self.rwH5['bin_prob_evolution'])[idx].squeeze() 
 
         pi = self.progress.indicator
-        f = open('debug.out','w')
         with pi:
             pi.new_operation('Initializing output file')
             self.initialize_output()
@@ -274,8 +273,8 @@ Command-line options
                 # Get the total weight in each bin for the input assignments file
                 # Only look at the first time point!----------------------------|
                 # non-colored assignments                                       V
-                input_nc_assignments = self.assignments['assignments'][iiter-1][0]
-                state_assignments = self.assignments['trajlabels'][iiter-1][0]
+                input_nc_assignments = self.assignments['assignments'][iiter-1][:,0]
+                state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
                 # colored assignments
                 input_c_assignments = input_nc_assignments*nstates+state_assignments
                 # Calculate input weights
@@ -290,7 +289,6 @@ Command-line options
                     input_weights[i] = np.sum(
                             seg_weights[np.where(input_c_assignments == i)] 
                                               )
-                f.write(repr(np.count_nonzero(input_weights))+'\n')
                 with np.errstate(divide='ignore', invalid='ignore'):
                     scaling_coefficients = new_weights/input_weights
                     scaling_coefficients[~np.isfinite(scaling_coefficients)] = 0
@@ -314,7 +312,6 @@ Command-line options
                                                  data=output_seg_index,
                                                  dtype=output_seg_index.dtype)
                 pi.progress += 1
-        f.close()
                          
             
                 
