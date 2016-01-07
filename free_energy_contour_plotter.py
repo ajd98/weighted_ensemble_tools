@@ -36,6 +36,11 @@ class ContourPlotter:
                                'Optionally, also include ``--first-iter`` and '
                                '``--last-iter`` flags.',
                           type=str)
+        parser.add_argument('--text-hist', default=None,
+                            dest='text_hist',
+                            help='Load data from TEXT_HIST. '
+                                 'The file should be ``numpy.loadtxt``-able',
+                            type=str)
         parser.add_argument('--pdist-axes', default=(0,1),
                           dest='pdist_axes',
                           help='Plot PDIST_AXES of the w_pdist file specified '
@@ -218,9 +223,15 @@ class ContourPlotter:
             else: 
                 print('You specified multiple input types.  Please only '
                       ' specify one type.')
-        if self.args.text_file is not None: # Use w_pdist input.
+        if self.args.text_file is not None: # Use text data input.
             if self.mode is None:
                 self.mode = 'text'
+            else: 
+                print('You specified multiple input types.  Please only '
+                      ' specify one type.')
+        if self.args.text_hist is not None: # Use text histogram input.
+            if self.mode is None:
+                self.mode = 'text_hist'
             else: 
                 print('You specified multiple input types.  Please only '
                       ' specify one type.')
@@ -625,6 +636,10 @@ class ContourPlotter:
         if self.mode == 'text':
             self._load_from_text_file()
             self._histogram()
+            self._edges_to_midpoints()
+        elif self.mode == 'text_hist':
+            self.H = numpy.loadtxt(self.args.text_hist)
+            self._make_bin_bounds()
             self._edges_to_midpoints()
         elif self.mode == 'pdist':
             self._load_from_pdist_file()
