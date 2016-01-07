@@ -115,6 +115,12 @@ Command-line options
                              from WESTH5 without rescaling.  By default, pull 
                              weights from a single iteration, specified using 
                              "-n/--n-iter".''')
+        
+        cogroup.add_argument('-nc', '--no-color', action='store_true', 
+                             dest='no_color',
+                             help='''If specified, do not use colored bins for
+                             rescaling weights. By default, use colored bins.
+                             ''')
                               
                                                          
     def process_args(self, args):
@@ -133,6 +139,7 @@ Command-line options
         self.copy = args.copy
         self.n_iter = args.n_iter
         self.evolution_mode = args.evolution_mode
+        self.i_use_color = ~args.no_color
 
         # Open indicated files and check for consistency.
         self.open_files()
@@ -161,59 +168,57 @@ Command-line options
         # Get the total number of bins.  Indices corresponding to walkers not 
         # present in a given iteration will be assigned this integer.
         n_bins = self.assignments['bin_labels'].shape[0] 
-        pi = self.progress.indicator
-        with pi:
-            pi.new_operation('Checking input files for consistency',
+        self.pi.new_operation('Checking input files for consistency',
                               last_iter)
 
-            for iiter in xrange(1, last_iter+1): #iiter is one-indexed
-                try:
-                    iter_group = self.westH5['iterations/iter_{:08d}'.format(iiter)]
-                except KeyError:
-                    raise ConsistencyError("Iteration {:d} exists in {:s} but not "
-                                           " in {:s}!".format(iiter,
-                                                              self.assignH5_path,
-                                                              self.westH5_path)    ) 
-                # Number of walkers in this iteration, for the westh5 file.
-                westh5_n_walkers = iter_group['seg_index'].shape[0]
-                # Number of walkers in this iteration, for the assignh5 file. The
-                # size of the assignments array is the same for all iterations, and
-                # equals the maximum observed number of walkers.  For iterations
-                # with fewer than the maximum number of walkers, the rest of the
-                # indices are filled with the integer ``n_bins``. 
-                # Switch to zero-indexing, and only look at the first time point.
-                assign_n_walkers = np.count_nonzero(
-                  np.array(self.assignments['assignments'][iiter-1][:,0]) != n_bins 
-                                                    )
-                if not westh5_n_walkers == assign_n_walkers:
-                    raise ConsistencyError("The number of walkers in the WESTPA "
-                                           "data file ({:s}, {:d}) and the number "
-                                           "of walkers in the assignments file "
-                                           "({:s}, {:d}) for iteration {:d} do not "
-                                           "match!".format(self.westH5_path,
-                                                           westh5_n_walkers,
-                                                           self.assignH5_path,
-                                                           assign_n_walkers,
-                                                           iiter)                  ) 
-                pi.progress += 1
-            ## Now check that the reweighting output file and the assignment file ##
-            ## use the same number of bins.                                       ##
-            rw_n_bins = self.rwH5['bin_prob_evolution'].shape[1]
-            # rw_n_bins is colored, but n_bins (from the assignments file) is not.
-            assign_nstates = self.assignments['state_labels'].shape[0]
-            rw_nstates = self.rwH5['state_labels'].shape[0]
-            if not assign_nstates == rw_nstates:
-                raise ConsistencyError("The number of states used in the "
-                                       "assignments file ({:d}) does not match the "
-                                       "number of states used in the reweighting "
-                                       "file ({:d})!".format(assign_nstates, 
-                                                             rw_nstates)           )
-            if not assign_nstates*n_bins == rw_n_bins:
-                raise ConsistencyError("The number of bins used in the assignments "
-                                       "file ({:d}) does not match the number of "
-                                       "bins used in the reweighting file ({:d})!."
-                                       .format(nbins, rw_n_bins/rw_nstates)        )   
-            pi.clear()
+        for iiter in xrange(1, last_iter+1): #iiter is one-indexed
+            try:
+                iter_group = self.westH5['iterations/iter_{:08d}'.format(iiter)]
+            except KeyError:
+                raise ConsistencyError("Iteration {:d} exists in {:s} but not "
+                                       " in {:s}!".format(iiter,
+                                                          self.assignH5_path,
+                                                          self.westH5_path)    ) 
+            # Number of walkers in this iteration, for the westh5 file.
+            westh5_n_walkers = iter_group['seg_index'].shape[0]
+            # Number of walkers in this iteration, for the assignh5 file. The
+            # size of the assignments array is the same for all iterations, and
+            # equals the maximum observed number of walkers.  For iterations
+            # with fewer than the maximum number of walkers, the rest of the
+            # indices are filled with the integer ``n_bins``. 
+            # Switch to zero-indexing, and only look at the first time point.
+            assign_n_walkers = np.count_nonzero(
+              np.array(self.assignments['assignments'][iiter-1][:,0]) != n_bins 
+                                                )
+            if not westh5_n_walkers == assign_n_walkers:
+                raise ConsistencyError("The number of walkers in the WESTPA "
+                                       "data file ({:s}, {:d}) and the number "
+                                       "of walkers in the assignments file "
+                                       "({:s}, {:d}) for iteration {:d} do not "
+                                       "match!".format(self.westH5_path,
+                                                       westh5_n_walkers,
+                                                       self.assignH5_path,
+                                                       assign_n_walkers,
+                                                       iiter)                  ) 
+            self.pi.progress += 1
+        ## Now check that the reweighting output file and the assignment file ##
+        ## use the same number of bins.                                       ##
+        rw_n_bins = self.rwH5['bin_prob_evolution'].shape[1]
+        # rw_n_bins is colored, but n_bins (from the assignments file) is not.
+        assign_nstates = self.assignments['state_labels'].shape[0]
+        rw_nstates = self.rwH5['state_labels'].shape[0]
+        if not assign_nstates == rw_nstates:
+            raise ConsistencyError("The number of states used in the "
+                                   "assignments file ({:d}) does not match the "
+                                   "number of states used in the reweighting "
+                                   "file ({:d})!".format(assign_nstates, 
+                                                         rw_nstates)           )
+        if not assign_nstates*n_bins == rw_n_bins:
+            raise ConsistencyError("The number of bins used in the assignments "
+                                   "file ({:d}) does not match the number of "
+                                   "bins used in the reweighting file ({:d})!."
+                                   .format(nbins, rw_n_bins/rw_nstates)        )   
+        self.pi.clear()
 
     def initialize_output(self):
         '''Copy or link datasets besides the seg_index datasets from the input 
@@ -237,31 +242,85 @@ Command-line options
                     else:
                         self.output[key] = h5py.ExternalLink(self.westH5_path,
                                                              key)
-            
-        
-    def go(self):
-        '''Main function'''
-        last_iter = self.assignments['assignments'].shape[0] 
-        nstates = len(self.assignments['state_labels'])
+
+    def get_new_weights(self, n_iter):
+        '''Generate and return a length-nbins numpy array representing a vector
+        of weights, where weights[i] represents the total weight that should be
+        in bin i, based on results from the postanalysis reweighting scheme.'''
         # Build map between indexing of 'conditional_flux_evolution' or
-        # 'bin_prob_evolution' (the indexing is the same for both) and iteration
-        # indices
+        # 'bin_prob_evolution' (the indexing is the same for both) and 
+        # weighted ensemble iteration indices
         cfe = self.rwH5['conditional_flux_evolution']
         idx_map = np.empty(cfe.shape[0], 
                            dtype=self.assignments['assignments'].dtype)
         for i in xrange(cfe.shape[0]):
+            # Axes are (timepoint index, beginning state, ending state)
+            # and final index gets the "iter_stop" data
             idx_map[i] = cfe[i,0,0][1] # Last iteration included in this
-                                          # averaging window
-
-        # If weights are to be pulled from a single iteration, get the weights 
+                                       # averaging window
         if not self.evolution_mode:
             idx = np.where(idx_map == self.n_iter)
             new_weights = np.array(self.rwH5['bin_prob_evolution'])[idx].squeeze() 
+            # If self.evolution_mode is False, always yield the same vector
+            # of weights.  The "while True" statements guarantee that each
+            # subsequent call to this method skips any unnecessary calculations 
+            if self.i_use_color:
+                while True:
+                    yield new_weights
+            else:
+                # Convert colored to non-colored vector. self.nstates should
+                # have been set by self.go()
+                colored_new_weights = new_weights
+                new_weights = numpy.zeros(new_weights/self.nstates)
+                for i in xrange(new_weights/self.nstates):
+                    new_weights[i] = np.sum(
+                      colored_new_weights[self.nstates*i:self.nstates*(i+1)]
+                                            )
+                while True:
+                    yield new_weights
+        else: # if self.evolution mode:
+            # If self.evolution mode is True, trap calls to this function
+            # inside the "while True" statement.
+            while True:
+                idx = np.where(idx_map == n_iter) 
+                new_weights = np.array(self.rwH5['bin_prob_evolution'][idx])\
+                              .squeeze()
+                if self.i_use_color:
+                    yield new_weights
+                else:
+                    # Convert colored to non-colored vector. self.nstates should
+                    # have been set by self.go()
+                    colored_new_weights = new_weights
+                    new_weights = numpy.zeros(new_weights/self.nstates)
+                    for i in xrange(new_weights/self.nstates):
+                        new_weights[i] = np.sum(
+                          colored_new_weights[self.nstates*i:self.nstates*(i+1)]
+                                                )
+                    yield new_weights
+                 
 
+    def go(self):
+        '''Main function'''
         pi = self.progress.indicator
-        with pi:
+        with pi as self.pi:
+            # Open files
+            self.open_files()
+            
+            # Check files for consistency
+            self.check_consistency_of_input_files() 
+
+            # Initialize the output file.
             pi.new_operation('Initializing output file')
             self.initialize_output()
+
+            last_iter = self.assignments['assignments'].shape[0] 
+            self.nstates = len(self.assignments['state_labels'])
+
+            # If weights are to be pulled from a single iteration, get the weights 
+            if not self.evolution_mode:
+                idx = np.where(idx_map == self.n_iter)
+                new_weights = np.array(self.rwH5['bin_prob_evolution'])[idx].squeeze() 
+
             pi.new_operation('Creating new WESTPA data file with scaled '
                              'weights.', last_iter)
             for iiter in xrange(1, last_iter+1): # iiter is one-indexed 
@@ -274,10 +333,11 @@ Command-line options
                 # Only look at the first time point!----------------------------|
                 # non-colored assignments                                       V
                 input_nc_assignments = self.assignments['assignments'][iiter-1][:,0]
-                state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
-                # colored assignments
-                input_c_assignments = input_nc_assignments*nstates+state_assignments
-                # Calculate input weights
+                ###if self.i_use_color:
+                ###    state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
+                ###    # colored assignments
+                ###    input_c_assignments = input_nc_assignments*nstates+\
+                ###                          state_assignments # Calculate input weights
                 input_iter_group = self.westH5['iterations/iter_{:08d}'
                                                .format(iiter)]
                 seg_weights = np.array(input_iter_group['seg_index']['weight'])
@@ -297,21 +357,18 @@ Command-line options
 
                 input_seg_index = np.array(input_iter_group['seg_index']) 
                 output_seg_index = []
-                iter_assignments = np.array(
-                        self.assignments['assignments'][iiter-1]
-                                            )
                 for iseg in xrange(input_seg_index.shape[0]):
                     # Only look at the first time point for assignments!
-                    bin_idx = iter_assignments[iseg][0]
+                    bin_idx = input_c_assignments[iseg]
                     coeff = scaling_coefficients[bin_idx] 
-                    output_seg_index.append((input_seg_index[iseg][0]*coeff,)
+                    output_seg_index.append((seg_weights[iseg]*coeff,)
                                              + tuple(input_seg_index[iseg])[1:])
                 output_seg_index = np.array(output_seg_index, 
                                             dtype=input_seg_index.dtype)
                 output_iter_group.create_dataset('seg_index',
                                                  data=output_seg_index,
                                                  dtype=output_seg_index.dtype)
-                pi.progress += 1
+                self.pi.progress += 1
                          
             
                 
