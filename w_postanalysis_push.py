@@ -21,6 +21,13 @@ class ConsistencyError(Exception):
     def __str__(self):
         return repr(self.value)
 
+class ArgumentError(Exception):
+    '''Exception raised for inconsistent command line arguments.'''
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
+
 class WPostanalysisPush(WESTTool):
     prog ='w_postanalysis_push'
     description = '''\
@@ -125,6 +132,17 @@ Command-line options
                              help='''If specified, do not use colored bins for
                              rescaling weights. By default, use colored bins.
                              ''')
+
+        cogroup.add_argument('--time-average', action='store_true',
+                             dest='time_average',
+                             help='''If specifed, scale weights of walkers the
+                             total weight of all walkers in all iterations in a
+                             given bin sum to the weight given by the 
+                             postanalysis reweighting output.  Weights in a
+                             given iteration will likely no longer sum to one. 
+                             This options is not compatible with evolution mode
+                             (see -e/--evolution-mode).''')
+ 
                               
                                                          
     def process_args(self, args):
@@ -148,6 +166,17 @@ Command-line options
             self.i_use_color = False
         else:
             self.i_use_color = True
+
+        if args.time_average:
+            self.i_time_average = True
+        else:
+            self.i_time_average = False
+
+        if self.i_time_average and self.evolution_mode:
+            raise ArgumentError("Error. Time averaging and evolution modes are "
+                                "not compatible! See options "
+                                "-e/--evolution-mode and --time-average for "
+                                "more information.")  
 
 
     def open_files(self):
@@ -315,7 +344,74 @@ Command-line options
                       colored_new_weights[self.nstates*i:self.nstates*(i+1)]
                                             )
                 return new_weights
-                 
+
+
+    def calculate_scaling_coefficients(self, iiter):
+        '''Calculate and return a vector of scaling coefficients for 
+        the weighted ensemble iteration ``iiter``.  scaling_coefficients[i] 
+        gives the value by which to scale (multiply) the weight of any walker 
+        in bin i.  
+
+        This method first calls self.get_new_weights(iiter) to find what the
+        weights output by the postanalysis reweighting scheme are.  Next, it 
+        considers where time averaging is enabled, and whether or not the 
+        colored scheme is used.  Finally, it calculates the input assignments
+        if necessary.'''
+        if not self.i_time_average:
+            # Get length-n_bins vector, where new_weights[i] is the total
+            # weight in bin i according to the postanalysis reweighting 
+            # scheme.
+            new_weights = self.get_new_weights(iiter)
+            # Get the total weight in each bin for the input assignments file
+            # Only look at the first time point!---------------------------|
+            # First get non-colored assignments                            V
+            input_assignments = self.assignments['assignments'][iiter-1][:,0]
+            # Get colored assignments if necessary
+            if self.i_use_color:
+                state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
+                input_assignments = input_assignments*self.nstates+\
+                                    state_assignments 
+            input_iter_group = self.westH5['iterations/iter_{:08d}'
+                                           .format(iiter)]
+            seg_weights = np.array(input_iter_group['seg_index']['weight'])
+            
+            # Calculate the weight in each bin.  the assignments should already
+            # have similar information in 'labeled_populations', but these weights
+            # invlude ALL time points in each iteration.  In this tool, we must
+            # scale the weight of each segment uniformly across any given weighted
+            # ensemble iteration, as the weight is only specifed once per iteration.
+            # Somewhat arbitrarily, we scale the weights only according to the
+            # first timepoint only (we could also choose the another timepoint, or
+            # average them perhaps).  For this reason, we need to re-calculate the
+            # labelled populations, only looking at the first time point.
+            # New weights will already be the correct length (ie, adjusted 
+            # for color/no color).
+            input_weights = np.zeros(new_weights.shape)
+            # Calculate the weight in each bin, in the input WESTPA data
+            # file.  This is necessary because w_assign does not calculate
+            # populations with color labels.
+            for i in xrange(input_weights.shape[0]):
+                input_weights[i] = np.sum(
+                        seg_weights[np.where(input_assignments == i)] 
+                                          )
+            # Suppress division errors
+            #with np.errstate(divide='ignore', invalid='ignore'):
+            with np.errstate(all='ignore'):
+                scaling_coefficients = new_weights/input_weights
+                # Set nonsensical value to zero; is this really necessary?
+                #scaling_coefficients[~np.isfinite(scaling_coefficients)] = 0
+        else: # if self.i_time_average
+            if not self.time_average_scaling_vector_calculated:
+                # Calculate the scaling vector  
+                new_weights = self.get_new_weights(iiter)
+                old_weights = numpy.zeros(new_weights.shape)
+                if not self.i_use_color:
+                    old_weights = self.assignments['labeled_populations'][:,:,:]
+                                  .sum(axis=(0,1))
+                else: # if self.i_use_color:
+                    
+                
+         
 
     def go(self):
         '''
