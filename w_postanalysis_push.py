@@ -227,13 +227,17 @@ Command-line options
     def initialize_output(self):
         '''Copy or link datasets besides the seg_index datasets from the input 
         WESTPA data file to the output (reweighted) data file. '''
+        self.pi.new_operation('Initializing output file',
+                              len(self.westH5['iterations'].keys()))
         for key in self.westH5.keys():
              if key != 'iterations':
                  if self.copy:
-                     self.westH5.copy(key, self.output_file)
+                     self.westH5.copy(key, self.output)
                  else:
                      self.output[key] = h5py.ExternalLink(self.westH5_path,
                                                           key)
+        for name, val in self.westH5.attrs.items():
+            self.output.attrs.create(name, val)
          
         self.output.create_group('iterations')
         for key1 in self.westH5['iterations']:
@@ -246,6 +250,10 @@ Command-line options
                     else:
                         self.output[key] = h5py.ExternalLink(self.westH5_path,
                                                              key)
+            for name, val in self.westH5['iterations/{:s}'.format(key1)].attrs.items():
+                self.output['iterations/{:s}'.format(key1)].attrs.create(name, val) 
+            self.pi.progress += 1
+        self.pi.clear()
 
 
     def get_new_weights(self, n_iter):
@@ -329,9 +337,7 @@ Command-line options
             self.check_consistency_of_input_files() 
 
             # Initialize the output file.
-            pi.new_operation('Initializing output file')
             self.initialize_output()
-            pi.clear()
 
             last_iter = self.assignments['assignments'].shape[0] 
             self.nstates = len(self.assignments['state_labels'])
