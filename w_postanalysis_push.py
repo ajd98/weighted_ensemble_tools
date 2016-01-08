@@ -62,6 +62,10 @@ Command-line options
         self.output_file = None
         self.rw_file = None
         self.assignments_file = None
+
+        self.weights_attributes_initialized = False
+        self.weights_already_calculated = False
+
         
     def add_args(self, parser):
         self.progress.add_args(parser)
@@ -139,11 +143,11 @@ Command-line options
         self.copy = args.copy
         self.n_iter = args.n_iter
         self.evolution_mode = args.evolution_mode
-        self.i_use_color = ~args.no_color
 
-        # Open indicated files and check for consistency.
-        #self.open_files()
-        #self.check_consistency_of_input_files()
+        if args.no_color:
+            self.i_use_color = False
+        else:
+            self.i_use_color = True
 
 
     def open_files(self):
@@ -243,6 +247,7 @@ Command-line options
                         self.output[key] = h5py.ExternalLink(self.westH5_path,
                                                              key)
 
+
     def get_new_weights(self, n_iter):
         '''Generate and return a length-nbins numpy array representing a vector
         of weights, where weights[i] represents the total weight that should be
@@ -250,53 +255,58 @@ Command-line options
         # Build map between indexing of 'conditional_flux_evolution' or
         # 'bin_prob_evolution' (the indexing is the same for both) and 
         # weighted ensemble iteration indices
-        cfe = self.rwH5['conditional_flux_evolution']
-        idx_map = np.empty(cfe.shape[0], 
-                           dtype=self.assignments['assignments'].dtype)
-        for i in xrange(cfe.shape[0]):
-            # Axes are (timepoint index, beginning state, ending state)
-            # and final index gets the "iter_stop" data
-            idx_map[i] = cfe[i,0,0][1] # Last iteration included in this
-                                       # averaging window
-        if not self.evolution_mode:
-            idx = np.where(idx_map == self.n_iter)
-            new_weights = np.array(self.rwH5['bin_prob_evolution'])[idx].squeeze() 
-            # If self.evolution_mode is False, always yield the same vector
-            # of weights.  The "while True" statements guarantee that each
-            # subsequent call to this method skips any unnecessary calculations 
+        if not self.weights_attributes_initialized:
+            cfe = self.rwH5['conditional_flux_evolution']
+            self.idx_map = np.empty(cfe.shape[0], 
+                                    dtype=self.assignments['assignments'].dtype)
+            for i in xrange(cfe.shape[0]):
+                # Axes are (timepoint index, beginning state, ending state)
+                # and final index gets the "iter_stop" data
+                self.idx_map[i] = cfe[i,0,0][1] # Last iteration included in this
+                                           # averaging window
+            self.weights_attributes_initialized = True
+
+        if (not self.evolution_mode) and (not self.weights_already_calculated):
+            idx = np.where(self.idx_map == self.n_iter)
+            self.new_weights = np.array(self.rwH5['bin_prob_evolution'])[idx]\
+                               .squeeze() 
+            self.weights_already_calculated = True
             if self.i_use_color:
-                while True:
-                    yield new_weights
+                return self.new_weights
+            else:
+                # Convert colored to non-colored vector. self.nstates should
+                # have been set by self.go()
+                colored_new_weights = np.copy(self.new_weights)
+                self.new_weights = np.zeros(
+                        int(self.new_weights.shape[0]/self.nstates)
+                                            )
+                for i in xrange(int(self.new_weights.shape[0]/self.nstates)):
+                    self.new_weights[i] = np.sum(
+                        colored_new_weights[self.nstates*i:self.nstates*(i+1)]
+                                                 )
+                return self.new_weights
+
+        elif (not self.evolution_mode) and self.weights_already_calculated:
+            return self.new_weights
+
+        else: # if self.evolution mode:
+            # If self.evolution mode is True, trap calls to this function
+            # inside the "while True" statement.
+            idx = np.where(self.idx_map == n_iter) 
+            new_weights = np.array(self.rwH5['bin_prob_evolution'][idx])\
+                          .squeeze()
+            if self.i_use_color:
+                return new_weights
             else:
                 # Convert colored to non-colored vector. self.nstates should
                 # have been set by self.go()
                 colored_new_weights = new_weights
-                new_weights = numpy.zeros(new_weights/self.nstates)
-                for i in xrange(new_weights/self.nstates):
+                new_weights = np.zeros(new_weights.shape[0]/self.nstates)
+                for i in xrange(new_weights.shape[0]/self.nstates):
                     new_weights[i] = np.sum(
                       colored_new_weights[self.nstates*i:self.nstates*(i+1)]
                                             )
-                while True:
-                    yield new_weights
-        else: # if self.evolution mode:
-            # If self.evolution mode is True, trap calls to this function
-            # inside the "while True" statement.
-            while True:
-                idx = np.where(idx_map == n_iter) 
-                new_weights = np.array(self.rwH5['bin_prob_evolution'][idx])\
-                              .squeeze()
-                if self.i_use_color:
-                    yield new_weights
-                else:
-                    # Convert colored to non-colored vector. self.nstates should
-                    # have been set by self.go()
-                    colored_new_weights = new_weights
-                    new_weights = numpy.zeros(new_weights/self.nstates)
-                    for i in xrange(new_weights/self.nstates):
-                        new_weights[i] = np.sum(
-                          colored_new_weights[self.nstates*i:self.nstates*(i+1)]
-                                                )
-                    yield new_weights
+                return new_weights
                  
 
     def go(self):
@@ -334,7 +344,6 @@ Command-line options
                 # weight in bin i according to the postanalysis reweighting 
                 # scheme.
                 new_weights = self.get_new_weights(iiter)
-                print(new_weights)
                 # Get the total weight in each bin for the input assignments file
                 # Only look at the first time point!---------------------------|
                 # First get non-colored assignments                            V
@@ -355,10 +364,11 @@ Command-line options
                 # labeled populations.
                 for i in xrange(input_weights.shape[0]):
                     input_weights[i] = np.sum(
-                            seg_weights[np.where(input_c_assignments == i)] 
+                            seg_weights[np.where(input_assignments == i)] 
                                               )
                 # Suppress division errors
-                with np.errstate(divide='ignore', invalid='ignore'):
+                #with np.errstate(divide='ignore', invalid='ignore'):
+                with np.errstate(all='ignore'):
                     scaling_coefficients = new_weights/input_weights
                     # Set nonsensical value to zero; is this really necessary?
                     #scaling_coefficients[~np.isfinite(scaling_coefficients)] = 0
@@ -374,7 +384,7 @@ Command-line options
                 output_seg_index = []
                 for iseg in xrange(input_seg_index.shape[0]):
                     # Only look at the first time point for assignments!
-                    bin_idx = input_c_assignments[iseg]
+                    bin_idx = input_assignments[iseg]
                     coeff = scaling_coefficients[bin_idx] 
                     output_seg_index.append((seg_weights[iseg]*coeff,)
                                              + tuple(input_seg_index[iseg])[1:])
