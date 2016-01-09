@@ -72,6 +72,7 @@ Command-line options
 
         self.weights_attributes_initialized = False
         self.weights_already_calculated = False
+        self.time_average_scaling_vector_calculated = False
 
         
     def add_args(self, parser):
@@ -401,14 +402,26 @@ Command-line options
                 # Set nonsensical value to zero; is this really necessary?
                 #scaling_coefficients[~np.isfinite(scaling_coefficients)] = 0
         else: # if self.i_time_average
-            if not self.time_average_scaling_vector_calculated:
+            if self.time_average_scaling_vector_calculated:
+                return self.time_average_scaling_vector
+            else: # if not self.time_average_scaling_vector_calculated:
                 # Calculate the scaling vector  
                 new_weights = self.get_new_weights(iiter)
                 old_weights = numpy.zeros(new_weights.shape)
                 if not self.i_use_color:
-                    old_weights = self.assignments['labeled_populations'][:,:,:]
+                    old_weights = self.assignments['labeled_populations'][:,:,:]\
                                   .sum(axis=(0,1))
                 else: # if self.i_use_color:
+                    idx_arr = np.arange(new_weights.shape[0])
+                    for state_idx in xrange(self.nstates):
+                        # map labeled populations into weight array
+                        old_weights[idx_arr*nstates+state_idx] = \
+                                self.assignments['labeled_populations'][:,state_idx,:]\
+                                .sum(axis=0) 
+                with np.errstate(all='ignore'):
+                    self.time_average_scaling_vector = new_weights/old_weights
+                self.time_average_scaling_vector_calculated = True
+                return self.time_average_scaling_vector
                     
                 
          
