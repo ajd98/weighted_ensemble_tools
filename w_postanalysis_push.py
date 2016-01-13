@@ -1,18 +1,14 @@
 #!/usr/bin/env python
 from __future__ import print_function, division; __metaclass__ = type
-import logging
-
-import numpy as np
 import h5py
-
+import logging
+import numpy as np
+import numpy.ma as ma
+import pylab
 import westpa
-from west.data_manager import weight_dtype, n_iter_dtype
-from westtools import (WESTTool, WESTDataReader, IterRangeSelection,
-                       ProgressIndicatorComponent)
-from westpa import h5io
-from westtools.dtypes import iter_block_ci_dtype as ci_dtype
+from westtools import (WESTTool, WESTDataReader, ProgressIndicatorComponent)
 
-log = logging.getLogger('westtools.w_multi_reweight')
+log = logging.getLogger('westtools.w_postanalysis_push')
 
 class ConsistencyError(Exception):
     '''Exception raised for inconsistent input files.'''
@@ -22,7 +18,8 @@ class ConsistencyError(Exception):
         return repr(self.value)
 
 class ArgumentError(Exception):
-    '''Exception raised for inconsistent command line arguments.'''
+    '''Exception raised for conflicting or improperly used command line 
+    arguments.'''
     def __init__(self, value):
         self.value = value
     def __str__(self):
@@ -44,16 +41,19 @@ zero weight. Additionally, total weight may not sum to one for some iterations,
 as a bin predicted to have nonzero weight by the postanalysis reweighting scheme
 may depopulate during the course a simulation. 
 
------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 Output format
------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 The output file (-o/--output, usually "west_rw.h5") is of the same format as
-the original WESTPA data file. 
+the original WESTPA data file. New weights are found in place of the original 
+weights, located in:
 
------------------------------------------------------------------------------
+/iterations/iter_{N_ITER:08d}/seg_index/ 
+
+--------------------------------------------------------------------------------
 Command-line options
------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 '''
 
     def __init__(self):
@@ -143,6 +143,17 @@ Command-line options
                              given iteration will likely no longer sum to one. 
                              This options is not compatible with evolution mode
                              (see -e/--evolution-mode).''')
+
+        cogroup.add_argument('--iter-range', dest='iter_range', type=str,
+                             default=None,
+                             help='''This option may be used only if 
+                             --time-average is specified.  ITER_RANGE should be
+                             a tuple of the form (first_iter, last_iter).  If
+                             this option is specified, use only information on 
+                             walkers between first_iter and last_iter 
+                             (inclusive) when calculating scaling coefficients.
+                             However, all iterations in the WESTPA data file
+                             will be rescaled according to these weights.''')
  
                               
                                                          
@@ -178,6 +189,30 @@ Command-line options
                                 "not compatible! See options "
                                 "-e/--evolution-mode and --time-average for "
                                 "more information.")  
+        self.first_iter = None
+        self.last_iter = None
+        if args.iter_range is not None:
+            if not self.i_time_average:
+                raise ArgumentError("Error. Specifying an iteration range is "
+                                    "only compatible with time-averaging! See "
+                                    "--time-average for more information.")
+            iter_tuple = eval(args.iter_range)
+            try:
+                self.first_iter = int(iter_tuple[0]) 
+                self.last_iter = int(iter_tuple[1]) 
+            except (ValueError, TypeError):
+                raise ArgumentError("An error occurred while parsing the "
+                                    "supplied iteration range. The iteration "
+                                    "range should evaluate to a Python tuple "
+                                    "of integers.  Input: ({:s}). Please see "
+                                    "the documentation for the --iter-range "
+                                    "option for more information."
+                                    .format(args.iter_range)                  )
+                                    
+            print("Using data between iterations {:d} and {:d} for calculation "
+                  "of rescaling vector."
+                  .format(self.first_iter, self.last_iter)
+                  )
 
 
     def open_files(self):
@@ -318,7 +353,7 @@ Command-line options
                 self.new_weights = np.zeros(
                         int(self.new_weights.shape[0]/self.nstates)
                                             )
-                for i in xrange(int(self.new_weights.shape[0]/self.nstates)):
+                for i in xrange(self.new_weights.shape[0]):
                     self.new_weights[i] = np.sum(
                         colored_new_weights[self.nstates*i:self.nstates*(i+1)]
                                                  )
@@ -328,8 +363,6 @@ Command-line options
             return self.new_weights
 
         else: # if self.evolution mode:
-            # If self.evolution mode is True, trap calls to this function
-            # inside the "while True" statement.
             idx = np.where(self.idx_map == n_iter) 
             new_weights = np.array(self.rwH5['bin_prob_evolution'][idx])\
                           .squeeze()
@@ -346,6 +379,20 @@ Command-line options
                                             )
                 return new_weights
 
+    def get_input_assignments(self, iiter):
+        '''Get the bin assignments for the first timepoint of iteration
+        ``iiter``, for all walkers in the input assignments file. Return a
+        1-dimension numpy array ``assignments``, where ``assignments[i]`` gives
+        the bin index assigned to walker i.  Bin indices take into account
+        whether or not the colored scheme is used.''' 
+        # Get the total weight in each bin for the input assignments file
+        # Look only at the first time point! -----------------------------V
+        assignments = np.array(self.assignments['assignments'][iiter-1][:,0])
+        if self.i_use_color:
+            traj_labels = np.array(self.assignments['traj_labels'][iiter-1][:,0])
+            assignments = assignments*nstates+traj_labels
+        return assignments
+               
 
     def calculate_scaling_coefficients(self, iiter):
         '''Calculate and return a vector of scaling coefficients for 
@@ -363,15 +410,7 @@ Command-line options
             # weight in bin i according to the postanalysis reweighting 
             # scheme.
             new_weights = self.get_new_weights(iiter)
-            # Get the total weight in each bin for the input assignments file
-            # Only look at the first time point!---------------------------|
-            # First get non-colored assignments                            V
-            input_assignments = self.assignments['assignments'][iiter-1][:,0]
-            # Get colored assignments if necessary
-            if self.i_use_color:
-                state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
-                input_assignments = input_assignments*self.nstates+\
-                                    state_assignments 
+            input_assignments = self.get_input_assignments(iiter)
             input_iter_group = self.westH5['iterations/iter_{:08d}'
                                            .format(iiter)]
             seg_weights = np.array(input_iter_group['seg_index']['weight'])
@@ -396,7 +435,6 @@ Command-line options
                         seg_weights[np.where(input_assignments == i)] 
                                           )
             # Suppress division errors
-            #with np.errstate(divide='ignore', invalid='ignore'):
             with np.errstate(all='ignore'):
                 scaling_coefficients = new_weights/input_weights
                 # Set nonsensical value to zero; is this really necessary?
@@ -406,25 +444,36 @@ Command-line options
                 return self.time_average_scaling_vector
             else: # if not self.time_average_scaling_vector_calculated:
                 # Calculate the scaling vector  
+                # old_weights will contain the total weight observed in each 
+                # bin during the FIRST timepoint of all iterations; this must
+                # be calculated here rather than using labeled_populations from
+                # the assignments file, as labeled_populations includes all
+                # timepoints
                 new_weights = self.get_new_weights(iiter)
-                old_weights = numpy.zeros(new_weights.shape)
-                if not self.i_use_color:
-                    old_weights = self.assignments['labeled_populations'][:,:,:]\
-                                  .sum(axis=(0,1))
-                else: # if self.i_use_color:
-                    idx_arr = np.arange(new_weights.shape[0])
-                    for state_idx in xrange(self.nstates):
-                        # map labeled populations into weight array
-                        old_weights[idx_arr*nstates+state_idx] = \
-                                self.assignments['labeled_populations'][:,state_idx,:]\
-                                .sum(axis=0) 
+                old_weights = np.zeros(new_weights.shape)
+                if self.first_iter is None:
+                    iter_strs = self.westH5['iterations/'].keys().sort()
+                    self.first_iter = int(iter_strs[0][5:])
+                    self.last_iter_iter = int(iter_strs[-1][5:])
+                # Iterate over all WE iterations and sum up the weight in each
+                # bin
+                for iiter in xrange(self.first_iter, self.last_iter+1):
+                    weights = np.array(
+                            self.westH5['iterations/iter_{:08d}/seg_index'
+                                        .format(iiter)]['weight']
+                                       )
+                    assignments = self.get_input_assignments(iiter) 
+                    for bin_idx in xrange(old_weights.shape[0]):
+                        where = np.where(assignments == bin_idx)
+                        old_weights[bin_idx] += np.sum(weights[where])
                 with np.errstate(all='ignore'):
                     self.time_average_scaling_vector = new_weights/old_weights
+                    self.time_average_scaling_vector[
+                            ~np.isfinite(self.time_average_scaling_vector)
+                                                     ] = 0.0
                 self.time_average_scaling_vector_calculated = True
                 return self.time_average_scaling_vector
                     
-                
-         
 
     def go(self):
         '''
@@ -455,44 +504,17 @@ Command-line options
             pi.new_operation('Creating new WESTPA data file with scaled '
                              'weights.', last_iter)
             for iiter in xrange(1, last_iter+1): # iiter is one-indexed 
-                # Get length-n_bins vector, where new_weights[i] is the total
-                # weight in bin i according to the postanalysis reweighting 
-                # scheme.
-                new_weights = self.get_new_weights(iiter)
-                # Get the total weight in each bin for the input assignments file
-                # Only look at the first time point!---------------------------|
-                # First get non-colored assignments                            V
-                input_assignments = self.assignments['assignments'][iiter-1][:,0]
-                # Get colored assignments if necessary
-                if self.i_use_color:
-                    state_assignments = self.assignments['trajlabels'][iiter-1][:,0]
-                    input_assignments = input_assignments*self.nstates+\
-                                        state_assignments 
+                scaling_coefficients = self.calculate_scaling_coefficients(iiter)
                 input_iter_group = self.westH5['iterations/iter_{:08d}'
                                                .format(iiter)]
-                seg_weights = np.array(input_iter_group['seg_index']['weight'])
-                # New weights will already be the correct length (ie, adjusted 
-                # for color/no color).
-                input_weights = np.zeros(new_weights.shape)
-                # Calculate the weight in each bin, in the input WESTPA data
-                # file.  This is necessary because w_assign does not calculate
-                # labeled populations.
-                for i in xrange(input_weights.shape[0]):
-                    input_weights[i] = np.sum(
-                            seg_weights[np.where(input_assignments == i)] 
-                                              )
-                # Suppress division errors
-                #with np.errstate(divide='ignore', invalid='ignore'):
-                with np.errstate(all='ignore'):
-                    scaling_coefficients = new_weights/input_weights
-                    # Set nonsensical value to zero; is this really necessary?
-                    #scaling_coefficients[~np.isfinite(scaling_coefficients)] = 0
+                input_assignments = self.get_input_assignments(iiter) 
                 # Get the HDF5 group for this iteration. It was already created
                 # while initializing the output file.
                 output_iter_group = self.output['iterations/iter_{:08d}'
                                                 .format(iiter)]
 
                 input_seg_index = np.array(input_iter_group['seg_index']) 
+                seg_weights = input_seg_index['weight']
                 # Build the new seg_index piece by piece.  Start with an empty
                 # list and add data for one segment at a time. Then convert to 
                 # a numpy array.
