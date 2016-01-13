@@ -3,8 +3,6 @@ from __future__ import print_function, division; __metaclass__ = type
 import h5py
 import logging
 import numpy as np
-import numpy.ma as ma
-import pylab
 import westpa
 from westtools import (WESTTool, WESTDataReader, ProgressIndicatorComponent)
 
