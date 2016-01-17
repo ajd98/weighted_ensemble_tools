@@ -4,6 +4,7 @@ import h5py
 import logging
 import numpy as np
 import westpa
+import westtools
 from westtools import (WESTMultiTool, WESTDataReader, ProgressIndicatorComponent)
 
 log = logging.getLogger('westtools.w_multi_push')
@@ -79,10 +80,11 @@ Command-line options
         iogroup = parser.add_argument_group('input/output options')
 
         iogroup.add_argument('-rw', dest='rw_H5_path', metavar='RW_FILE',
-                             default='kinrw.h5',
+                             default=None,
                              help='''Pull weights from RW_FILE. This should be
                              the output file from either w_postanalysis_reweight 
-                             or w_multi_reweight.''')
+                             or w_multi_reweight. Alternatively, this file may 
+                             be specified in the YAML file''')
 
         iogroup.add_argument('-y', '--yaml', dest='yamlpath', 
                              metavar='YAMLFILE', 
@@ -95,6 +97,9 @@ Command-line options
                              ['simulations'][SIMNAME]['assignments'], 
                              ['simulations'][SIMNAME]['input_west']
                              ['simulations'][SIMNAME]['output_west'].  
+                             Additionally, a reweighting file may be specified
+                             under the key ['reweighitng_data'] at the top 
+                             level of the YAML file. 
                              ''')
 
         iogroup.add_argument('-c', '--copy', dest='copy', action='store_true', 
@@ -141,6 +146,7 @@ Command-line options
         # I/O arguments
         self.rwH5_path = args.rw_H5_path
         # Load the yaml input file; Make self.yamlargdict available
+        self.yamlpath = args.yamlpath
         self.parse_from_yaml(args.yamlpath)
 
         # Calculation arguments
@@ -155,10 +161,6 @@ Command-line options
         self.first_iter = None
         self.last_iter = None
         if args.iter_range is not None:
-            if not self.i_time_average:
-                raise ArgumentError("Error. Specifying an iteration range is "
-                                    "only compatible with time-averaging! See "
-                                    "--time-average for more information.")
             iter_tuple = eval(args.iter_range)
             try:
                 self.first_iter = int(iter_tuple[0]) 
@@ -177,47 +179,55 @@ Command-line options
                   .format(self.first_iter, self.last_iter)
                   )
 
+    def process_yaml(self):
+        '''Process information specified in the yaml file.'''
+        class YAMLArgumentError(ArgumentError):
+            pass
+
+        if not 'simulations' in self.yamlargdict.keys():
+            raise YAMLArgumentError("Key `simulations` not found at uppermost "
+                                    "level of yaml file {:s}.  See -h/--help "
+                                    "for more information."
+                                    .format(self.yamlpath)
+                                    )
+        self.simnames = []
+        self.westH5_paths = []
+        self.assignments_paths = []
+        self.output_paths = []
+        self.rwH5_path = None
+        for simname in self.yamlargdict['simulations'].keys():
+            self.simnames.append(simname)
+            self.westH5_paths.append(self.yamlargdict['simulations']\
+                                                     [simname]['input_west'])
+            self.assignments_paths.append(
+                    self.yamlargdict['simulations'][simname]['assignments']
+                                          )
+            self.output_paths.append(self.yamlargdict['simulations']\
+                                                     [simname]['output_west'])
+        if 'reweighting_data' in self.yamlargdict.keys(): 
+            if self.rwH5_path is not None:
+                raise ArgumentError("Reweighting data files were specified both"
+                                    " via command line (see -rw, path specified"
+                                    ": {:s}) and via YAML input (see -y/--yaml,"
+                                    " path specified: {:s}). Please only "
+                                    "specify using one option."
+                                    )
+            self.rwH5_path = self.yamlargdict['reweighting_data'] 
 
 
     def open_files(self):
         '''Open the WESTPA data files, the reweighting output file, the
         assignments files, and the output files.''' 
         
-        self.simnames = []
-        self.westH5_paths = []
         self.westH5_files = []
-        self.assignments_paths = []
         self.assignments_files = []
-        self.output_paths = []
         self.output_files = []
-        for simname in self.yamlargdict.iter_keys():
-            self.simnames.append(simname)
-            self.westH5_paths.append(self.yamlargdict[simname]['input_west'])
-
-            self.westH5_files.append(
-              h5py.File(
-                        self.yamlargdict[simname]['input_west'],
-                        'r')
-                                     )
-
-            self.assignments_paths.append(
-                    self.yamlargdict[simname]['assignments']
-                                          )
-
+        for isim in xrange(len(self.simnames)):
+            self.westH5_files.append(h5py.File(self.westH5_paths[isim], 'r'))
             self.assignments_files.append(
-              h5py.File(
-                        self.yamlargdict[simname]['assignments'],
-                        'r')
+                    h5py.File(self.assignments_paths[isim], 'r')
                                           )
-
-            self.output_paths.append(self.yamlargdict[simname]['output_west'])
-
-            self.output_files.append(
-              h5py.File(
-                        self.yamlargdict[simname]['output_west'],
-                        'w')
-                                     )
-           
+            self.output_files.append(h5py.File(self.output_paths[isim], 'w'))
         self.rwH5 = h5py.File(self.rwH5_path, 'r')
  
 
@@ -262,7 +272,7 @@ Command-line options
                                            "the associated WESTPA data file "
                                            "{:s}!".format(iiter,
                                                     self.assignments_paths[isim], 
-                                                    self.westH5_paths[sim])
+                                                    self.westH5_paths[isim])
                                            )
                 # Number of walkers in this iteration, for the westh5 file.
                 westh5_n_walkers = iter_group['seg_index'].shape[0]
@@ -428,10 +438,10 @@ Command-line options
             # be calculated here rather than using labeled_populations from
             # the assignments file, as labeled_populations includes all
             # timepoints
-            new_weights = self.get_new_weights(iiter)
+            new_weights = self.get_new_weights(self.n_iter)
             old_weights = np.zeros(new_weights.shape)
             # Add up weights in each bin from all simulations
-            for isim in xrange(len(self.sim_names)):
+            for isim in xrange(len(self.simnames)):
                 # Calcuate the iteration range to use if not specified.
                 if self.first_iter is None:
                     iter_strs = self.westH5_files[isim]['iterations/'].keys().sort()
@@ -444,7 +454,7 @@ Command-line options
                 # bin
                 for iiter in xrange(first_iter, last_iter+1):
                     weights = np.array(
-                            self.westH5_files[sim]\
+                            self.westH5_files[isim]\
                                              ['iterations/iter_{:08d}/seg_index'
                                               .format(iiter)]['weight']
                                        )
@@ -452,12 +462,14 @@ Command-line options
                     for bin_idx in xrange(old_weights.shape[0]):
                         where = np.where(assignments == bin_idx)
                         old_weights[bin_idx] += np.sum(weights[where])
+                    self.pi.progress += 1
             with np.errstate(all='ignore'):
                 self.time_average_scaling_vector = new_weights/old_weights
                 self.time_average_scaling_vector[
                         ~np.isfinite(self.time_average_scaling_vector)
                                                  ] = 0.0
             self.time_average_scaling_vector_calculated = True
+            self.pi.clear()
             return self.time_average_scaling_vector
                     
 
@@ -474,13 +486,9 @@ Command-line options
         pi = self.progress.indicator
         with pi as self.pi:
             
-            # Open files
+            self.process_yaml()
             self.open_files()
-            
-            # Check files for consistency
             self.check_consistency_of_input_files() 
-
-            # Initialize the output file.
             self.initialize_output()
 
             pi.new_operation('Creating new WESTPA data file with scaled '
@@ -490,8 +498,8 @@ Command-line options
             # self.check_consistency_of_input_files()
             self.nstates = len(self.assignments_files[0]['state_labels'])
 
-            for isim in xrange(len(self.sim_names)):
-                last_iter = self.assignments_files[sim]['assignments'].shape[0] 
+            for isim in xrange(len(self.simnames)):
+                last_iter = self.assignments_files[isim]['assignments'].shape[0] 
 
                 for iiter in xrange(1, last_iter+1): # iiter is one-indexed 
                     scaling_coefficients = self.calculate_scaling_coefficients()
