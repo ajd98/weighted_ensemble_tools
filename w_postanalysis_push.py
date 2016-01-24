@@ -333,8 +333,8 @@ Command-line options
             for i in xrange(cfe.shape[0]):
                 # Axes are (timepoint index, beginning state, ending state)
                 # and final index gets the "iter_stop" data
-                self.idx_map[i] = cfe[i,0,0][1] # Last iteration included in this
-                                           # averaging window
+                # stop_iter is exclusive, so subtract one
+                self.idx_map[i] = cfe[i,0,0][1]-1 
             self.weights_attributes_initialized = True
 
         if (not self.evolution_mode) and (not self.weights_already_calculated):
