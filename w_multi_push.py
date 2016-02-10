@@ -412,7 +412,7 @@ Command-line options
                                )
         if self.i_use_color:
             traj_labels = np.array(
-                    self.assignments_files[isim]['traj_labels'][iiter-1][:,0]
+                    self.assignments_files[isim]['trajlabels'][iiter-1][:,0]
                                    )
             assignments = assignments*nstates+traj_labels
         return assignments

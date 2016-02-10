@@ -387,7 +387,7 @@ Command-line options
         # Look only at the first time point! -----------------------------V
         assignments = np.array(self.assignments['assignments'][iiter-1][:,0])
         if self.i_use_color:
-            traj_labels = np.array(self.assignments['traj_labels'][iiter-1][:,0])
+            traj_labels = np.array(self.assignments['trajlabels'][iiter-1][:,0])
             assignments = assignments*nstates+traj_labels
         return assignments
                
