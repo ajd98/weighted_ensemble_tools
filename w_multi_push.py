@@ -366,13 +366,13 @@ Command-line options
         if not self.weights_attributes_initialized:
             cfe = self.rwH5['conditional_flux_evolution']
             self.idx_map = np.empty(cfe.shape[0], 
-                   dtype=self.assignments_files[0]['assignments'].dtype
+                                    dtype=np.uint64
                                     )
             for i in xrange(cfe.shape[0]):
                 # Axes are (timepoint index, beginning state, ending state)
                 # and final index gets the "iter_stop" data
                 # stop_iter is exclusive, so subtract 1
-                self.idx_map[i] = cfe[i,0,0][1] -1 # Last iteration included in this
+                self.idx_map[i] = cfe[i,0,0][1]-1 # Last iteration included in this
                                                    # averaging window
             self.weights_attributes_initialized = True
 
@@ -414,7 +414,7 @@ Command-line options
             traj_labels = np.array(
                     self.assignments_files[isim]['trajlabels'][iiter-1][:,0]
                                    )
-            assignments = assignments*nstates+traj_labels
+            assignments = assignments*self.nstates+traj_labels
         return assignments
                
 
