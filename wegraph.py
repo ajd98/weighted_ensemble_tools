@@ -5,6 +5,7 @@ import networkx
 import numpy
 import os
 import sys
+import matplotlib.pyplot as pyplot
 
 # WEGraph.remove_branch works recursively; when removing large branches it hits
 # Python's internal recursion limit.
@@ -59,6 +60,99 @@ class WEGraph:
             parentmap = self._return_parent_map(niter)  
         return
 
+    def build_ancestry_tree(self, childlist):
+        '''
+        Build a NetworkX graph from a WESTPA data file, including only 
+        ancestors of segments in ``childlist``.
+        '''
+        self.ancestry_tree = networkx.DiGraph()
+
+        # Find the highest index iteration to include        
+        childlist.sort(reverse=True)
+        last_iter = childlist[0][0]
+
+        # Iterate over the WE iterations, starting with the last one first.
+        niter = last_iter 
+        rootlist = []
+        for leaf in childlist:
+            child = leaf
+            while True:
+                parentmap = self._return_parent_map(child[0])
+                parentid = parentmap[child[1]] 
+                if parentid < 0: 
+                    rootlist.append(child)
+                    break
+                parent = (child[0]-1, parentid)
+                self.ancestry_tree.add_edge(parent,
+                                            child)
+                child = parent
+
+        #for curriter in xrange(last_iter, 1, -1):
+        #    # the parent index of child (niter, i) is parentmap[i]  
+        #    parentmap = self._return_parent_map(curriter)  
+        #    for (segiter, segid) in childlist:
+        #        if segiter == curriter:
+        #            parent = (curriter-1, parentmap[segid])
+        #            self.ancestry_tree.add_edge(parent,
+        #                                        (segiter, segid)
+        #                                        ) 
+        #            childlist.remove((segiter, segid))
+        #            childlist.append(parent)
+        return rootlist
+
+    def display_ancestry_tree(self, roots, leaves, figname='ancestrytree.pdf'):
+        nodelist = self.ancestry_tree.nodes()
+        nodelist.sort()
+        print('calculating tree widths')
+        # Calculate widths of disjoint trees
+        treewidths = []
+        for root in roots:
+            maxwidth=1
+            parentlist = [root]
+            while parentlist: 
+                childlist = []
+                for parent in parentlist:
+                    childlist += self.ancestry_tree.successors(parent)
+                if len(childlist) > maxwidth:
+                    maxwidth = len(childlist)
+                parentlist = childlist
+            treewidths.append(maxwidth)
+        treebounds = [0]
+        for treewidth in treewidths:
+            treebounds.append(treewidth+treebounds[-1]) 
+        # set the positions of root nodes; each position is a tuple (x,y), with
+        # the iteration as y
+        positions = {} 
+        for iroot, root in enumerate(roots):
+            positions[root] = ((treebounds[iroot+1]+treebounds[iroot])/2, -1*root[0]) 
+        print('calculating positions')
+        # set the positions of all the child nodes
+        for iroot, root in enumerate(roots):
+            print("\r {:02d}%".format(iroot*100/len(roots)), end='')
+            parentlist = [root]
+            while len(parentlist) > 0:
+                childlist = []
+                for parent in parentlist:
+                    childlist += self.ancestry_tree.successors(parent)
+                # Spacing between children
+                if len(childlist) == 0: 
+                    break 
+                delta = float((treebounds[iroot+1]-treebounds[iroot]))\
+                        /len(childlist) 
+                for ichild, child in enumerate(childlist):
+                    positions[child] = (ichild*delta+treebounds[iroot], -1*child[0]) 
+                parentlist = childlist
+        print('generating figure')
+        colors=[]
+        for node in self.ancestry_tree.nodes():
+            if node in leaves:
+                colors.append((0,1,0,1))
+            else:
+                colors.append((1,0,0,1))
+        networkx.draw_networkx(self.ancestry_tree, pos=positions, arrows=False,
+                               node_size=10, font_size=4, with_labels=False,
+                               node_color=colors)
+
 
     def remove_branch(self, node):
         '''
@@ -103,6 +197,7 @@ class WEGraph:
                                "supplied to this script.".format(repr(node))) 
         # Now iteratively prune the tree, keeping count of independent segments
         count = 0
+        indevntlist = []
         self.succ_list.sort(reverse=True)
         for node in self.succ_list:
             if self.graph.has_node(node):
@@ -111,10 +206,12 @@ class WEGraph:
                       .format(str(node[0]).rjust(6), str(count).rjust(6)), 
                       end='')
                 count += 1
+                indevntlist.append(node)
                 self.prune_from_ancestor(node, radius)
             else:
                 continue 
         print("\nTotal: Found {:d} independent events.".format(count))
+        return count, indevntlist
                                 
     def load_succ_list(self, wsucc_txt_output):
         # Formatted as [[iteration, seg_id]
