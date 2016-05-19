@@ -36,6 +36,7 @@ def main():
                            'succ/{:d}.out'.format(i+1))
 
         # Calculate the number of independent events. Outputs to STDOUT
+        # The argument (int) is the correlation length in tau.
         weg.prune_for_independence(35)
 
     
