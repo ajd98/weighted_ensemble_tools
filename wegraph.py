@@ -106,15 +106,19 @@ class WEGraph:
         print('calculating tree widths')
         # Calculate widths of disjoint trees
         treewidths = []
+        leafcount = 0
         for root in roots:
             maxwidth=1
             parentlist = [root]
             while parentlist: 
                 childlist = []
                 for parent in parentlist:
-                    childlist += self.ancestry_tree.successors(parent)
-                if len(childlist) > maxwidth:
-                    maxwidth = len(childlist)
+                    successors = self.ancestry_tree.successors(parent)
+                    childlist += successors
+                    if not successors: #If this parent is a leaf
+                        leafcount += 1
+                if len(childlist) + leafcount > maxwidth:
+                    maxwidth = len(childlist)+leafcount
                 parentlist = childlist
             treewidths.append(maxwidth)
         treebounds = [0]
@@ -124,7 +128,8 @@ class WEGraph:
         # the iteration as y
         positions = {} 
         for iroot, root in enumerate(roots):
-            positions[root] = ((treebounds[iroot+1]+treebounds[iroot])/2, -1*root[0]) 
+            positions[root] = ((treebounds[iroot+1]+treebounds[iroot])/2, 
+                               -1*root[0]) 
         print('calculating positions')
         # set the positions of all the child nodes
         for iroot, root in enumerate(roots):
@@ -133,24 +138,39 @@ class WEGraph:
             while len(parentlist) > 0:
                 childlist = []
                 for parent in parentlist:
-                    childlist += self.ancestry_tree.successors(parent)
-                # Spacing between children
-                if len(childlist) == 0: 
+                    if parent == 'ghost':
+                        childlist.append(parent)
+                    else:
+                        successors = self.ancestry_tree.successors(parent)
+                        if successors:
+                            childlist += self.ancestry_tree.successors(parent)
+                        else: # this is a leaf; add ghost child
+                            childlist.append('ghost')
+                # Check if we are done
+                living_check = False 
+                for child in childlist:
+                    if child != 'ghost': living_check=True
+                if not living_check: 
                     break 
+                # Spacing between children
                 delta = float((treebounds[iroot+1]-treebounds[iroot]))\
-                        /len(childlist) 
+                        /(len(childlist)+1) 
                 for ichild, child in enumerate(childlist):
-                    positions[child] = (ichild*delta+treebounds[iroot], -1*child[0]) 
+                    if child != 'ghost':
+                        positions[child] = ((ichild+1)*delta+treebounds[iroot], 
+                                            -1*child[0]) 
                 parentlist = childlist
         print('generating figure')
         colors=[]
         for node in self.ancestry_tree.nodes():
             if node in leaves:
+                colors.append((1,0,0,1))
+            elif node in roots:
                 colors.append((0,1,0,1))
             else:
-                colors.append((1,0,0,1))
+                colors.append((0,0,0,1))
         networkx.draw_networkx(self.ancestry_tree, pos=positions, arrows=False,
-                               node_size=10, font_size=4, with_labels=False,
+                               node_size=5, font_size=4, with_labels=False,
                                node_color=colors)
 
 
