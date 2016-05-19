@@ -123,7 +123,7 @@ class CorrelationAnalysis:
         result = r/(variance*(numpy.arange(n, 0, -1)))
         return result
         
-    def plot(self, xlims=None, figname='autocorrel.pdf', ax=None):
+    def plot(self, xlims=None, figname='autocorrel.pdf', ax=None, format_axis=True):
         '''
         Calculate and plot the autocorrelation of the weight and number flux.
    
@@ -159,7 +159,7 @@ class CorrelationAnalysis:
         fcorrel_time = 0
         for xval in xrange(0,fmean.shape[0]):
             if fmean[xval]-fci[xval] <=0:
-                fcorrel_time = xval*blocksize
+                fcorrel_time = xval
                 break
         print("Correlation time based on weight flux is {:d} iterations".format(fcorrel_time))
         ax.axvline(x=fcorrel_time, color='gray', ls='--')
@@ -168,12 +168,16 @@ class CorrelationAnalysis:
         acorrel_time = 0
         for xval in xrange(0,amean.shape[0]):
             if amean[xval]-aci[xval] <=0:
-                acorrel_time = xval*blocksize
+                acorrel_time = xval
                 break
         print("Correlation time based on number flux is {:d} iterations".format(acorrel_time))
         ax.axvline(x=acorrel_time, color='blue', ls='--')
         ax.text(acorrel_time+1, -0.8, '{:d}'.format(acorrel_time), color='blue')
 
+        if format_axis:
+            ax.set_xlabel(u'lag time (\u03C4)')
+            ax.set_ylabel('autocorrelation of weight/number flux')
+            ax.legend(frameon=False)
        
         return
         
@@ -228,16 +232,20 @@ def main():
     fig, (ax1, ax2, ax3, ax4) = pyplot.subplots(4,1, figsize=(7.25, 8))
 
     ca = CorrelationAnalysis(s7160N2NPpaths, 1, fi=1, li=2000)
-    ca.plot(1, xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax1)
+    ca.plot(xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax1,
+            format_axis=False)
 
     ca = CorrelationAnalysis(s7160NP2Npaths, 0, fi=1, li=2000)
-    ca.plot(1, xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax2)
+    ca.plot(xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax2,
+            format_axis=False)
 
     ca = CorrelationAnalysis(s6071NP2Npaths, 0, fi=1, li=2000)
-    ca.plot(1, xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax3)
+    ca.plot(xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax3,
+            format_axis=False)
 
     ca = CorrelationAnalysis(s6071N2NPpaths, 1, fi=1, li=2000)
-    ca.plot(1, xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax4)
+    ca.plot(xlims=(0,400), figname='autocorrel_comparison.pdf', ax=ax4,
+            format_axis=False)
 
 
     fig.subplots_adjust(bottom=0.2, hspace=0.0)
