@@ -33,9 +33,14 @@ class WEGraph:
         return self.westh5['iterations'][self._format_iterstr(niter)]\
                           ['seg_index'].shape[0]
 
-    def build(self):
+    def build(self, get_props=None):
         '''
         Build a NetworkX graph from a WESTPA data file.
+
+        get_props: If none, do not add attributes to nodes. Otherwise, call the
+          function specified by get_props as get_props(niter, nseg). This
+          should return a dictionary, which is then merged into the attributes
+          for the node given by niter, nseg. 
         '''
         self.graph = networkx.DiGraph()
 
@@ -53,6 +58,9 @@ class WEGraph:
             nsegs = self._get_nsegs(niter) 
             for iseg in xrange(nsegs):
                 self.graph.add_node((niter, iseg))
+                if get_props is not None:
+                    d = get_props(niter, iseg)
+                    self.graph.node[(niter, iseg)].update(d)
             
             for iseg in xrange(previous_nsegs):
                 self.graph.add_edge((niter, parentmap[iseg]), (niter+1, iseg))
