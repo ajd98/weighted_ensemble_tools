@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import print_function
 import h5py
 import numpy
 import os
@@ -17,11 +18,16 @@ class GetWeight:
         self.weightdict = {}
         return
 
-    def add_iteration(self, niter):
+    def add_weight_iteration(self, niter):
         '''Store weight array in memory.'''
         self.weightdict[niter] = numpy.array(
             self.westh5['iterations/iter_{:08d}/seg_index'.format(niter)]\
                   ['weight']                 )
+        # Delete older entries to conserve memory
+        try:
+            del self.weightdict[niter+1]
+        except KeyError:
+            pass
         return
 
     def get_weight(self, niter, nseg):
@@ -32,7 +38,7 @@ class GetWeight:
         try:
             w = self.weightdict[niter][nseg]
         except KeyError:
-            self.add_iteration(niter)
+            self.add_weight_iteration(niter)
             w = self.weightdict[niter][nseg]
         return {'weight': w}
 
@@ -56,9 +62,9 @@ class GetState:
         self.statedict = {}
         return
 
-    def add_iteration(self, niter):
+    def add_state_iteration(self, niter):
         '''Store state array in memory'''
-        assignments = numpy.array(self.assignh5['assignments']) 
+        assignments = numpy.array(self.assignh5['assignments'][niter-1]) 
         # Map bin assignments into state assignments
         states = self.state_map[assignments]  
 
@@ -71,7 +77,14 @@ class GetState:
         for stateid in self.track_states:
             w = numpy.any(states==stateid, axis=1)
             condensed_states[w] = stateid
-        self.statedict(niter) = condensed_states 
+        self.statedict[niter] = condensed_states 
+
+        # Delete older entries to conserve memory
+        try:
+            del self.statedict[niter+1]
+        except KeyError:
+            pass
+
         return
 
     def get_state(self, niter, nseg):
@@ -82,26 +95,31 @@ class GetState:
         try:
             i = self.statedict[niter][nseg]
         except KeyError:
-            self.add_iteration(niter)
+            self.add_state_iteration(niter)
             i = self.statedict[niter][nseg]
         return {'state': i}
 
 class GetStateWeight(GetWeight, GetState):
-    def __init__(self, westh5, assignh5, track_states=[]):
+    def __init__(self, westh5, assignh5, succlist, track_states=[]):
         '''
         See GetWeight and GetState class for explanation of arguments.
         '''
-        GetWeight.__init__(westh5)
-        GetState.__init__(assignh5, track_states=track_states)
+        GetWeight.__init__(self, westh5)
+        GetState.__init__(self, assignh5, track_states=track_states)
+        #self.succlist = set(succlist)
         return
 
     def get(self, niter, nseg):
-        return self.get_weight(niter, nseg).update(self.get_state(niter, nseg))
+        print('\r  {:04d}'.format(niter), end='')
+        d = self.get_state(niter, nseg)
+        #if (niter, nseg) in self.succlist:
+        d.update(self.get_weight(niter, nseg))
+        return d 
         
 
 
 class TPAnalysis(wegraph.WEGraph):
-    def __init__(self, westh5, assignh5, succpath, last_iter=None):
+    def __init__(self, westh5, assignh5, succpath, last_iter=None, copy=False):
         '''
         westh5: a west.h5 data file (h5py file object)
         assignh5: output file from w_assign (h5py file object)
@@ -111,6 +129,7 @@ class TPAnalysis(wegraph.WEGraph):
         self.assignh5 = assignh5
         self.succpath = succpath
         self.load_succ_list(self.succpath)
+        self.copy = copy
         return
 
     def _init_output(self):
@@ -123,7 +142,7 @@ class TPAnalysis(wegraph.WEGraph):
         return
 
     def _trace_and_add(self, child, istate):
-        child_weight = child['weight']
+        child_weight = self.graph.node[child]['weight']
         node = child
         check = True
         while check:
@@ -133,6 +152,10 @@ class TPAnalysis(wegraph.WEGraph):
                 raise ValueError("Segment {:d} of iteration {:d} has more than "
                                  "one parent! Exiting..."\
                                  .format(node[1], node[0]))
+            if len(predecessors) == 0:
+                break
+            # predecessors should be a list with one element if it gets this 
+            # far.  Get that element.
             node = predecessors[0]
 
             # Make sure the segment index is nonnegative.  Segment indices are 
@@ -146,10 +169,19 @@ class TPAnalysis(wegraph.WEGraph):
                                  self.westh5['iterations/iter_{:08d}/seg_index'\
                                              .format(niter)] 
                                          )
-        new_seg_index = original_seg_index
+        new_seg_index = [] 
         for segid in xrange(len(original_seg_index)):
-            new_seg_index[segid]['weight'] = self.graph.node((niter, segid))\
-                                                            ['new_weight']
+            entry = (self.graph.node[(niter, segid)]['new_weight'],
+                     original_seg_index[segid][1],
+                     original_seg_index[segid][2],
+                     original_seg_index[segid][3],
+                     original_seg_index[segid][4],
+                     original_seg_index[segid][5],
+                     original_seg_index[segid][6],
+                     original_seg_index[segid][7])
+            new_seg_index.append(entry)
+        new_seg_index = numpy.array(new_seg_index, 
+                                    dtype=original_seg_index.dtype)
         return new_seg_index
             
             
@@ -169,7 +201,9 @@ class TPAnalysis(wegraph.WEGraph):
             self.outputwest.attrs.create(name, val)
 
         self.outputwest.create_group('iterations')
-        for key1 in self.westh5['iterations']:
+        for key1 in sorted(self.westh5['iterations'].keys()):
+            if int(key1[5:]) > self.last_iter: 
+                break
             self.outputwest.create_group('iterations/{:s}'.format(key1))
             for key2 in self.westh5['iterations/{:s}'.format(key1)]:
                 key = 'iterations/'+key1+'/'+key2
@@ -190,6 +224,7 @@ class TPAnalysis(wegraph.WEGraph):
                                         .attrs.items():
                 self.outputwest['iterations/{:s}'.format(key1)]\
                                .attrs.create(name, val)
+        self.outputwest.close()
         return
 
     def run(self, outputpath, istate=0, fstate=1):
@@ -206,17 +241,23 @@ class TPAnalysis(wegraph.WEGraph):
 
         # Build the history graph, including weights as attributes
         getstateandweight = GetStateWeight(self.westh5, self.assignh5, 
-                                        track_states=(istate, fstate))
+                                           self.succ_list,
+                                           track_states=(istate, fstate))
+        print("Building graph...")
         self.build(get_props=getstateandweight.get)
 
         # Set new weights all to zero 
+        print("Initializing new weights")
         for node in self.graph.nodes():
-            node['new_weight'] = 0
+            self.graph.node[node]['new_weight'] = 0
 
         # Update new weights according to sum of weights of successful children
+        print("Calculating new weights")
         for succ_child in self.succ_list: 
-            self._trace_and_add(succ_child)
+            if succ_child[0] <= self.last_iter: 
+                self._trace_and_add(succ_child, istate)
  
         # Write the new west.h5 file with updated weights.
+        print("Writing output file")
         self._write_new_westh5()
         return
