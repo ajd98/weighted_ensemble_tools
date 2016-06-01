@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#i!/usr/bin/env python
 from __future__ import print_function
 import h5py
 import numpy
@@ -78,10 +78,10 @@ class TPAnalysis(object):
     def _check_active(self, niter, segid):
         '''This method is only currently designed to work for steady state 
         simulations!'''
-        states = self.state_map[self.assignments[segid]] 
-        if numpy.any(states == self.istate):
-            return False
         if segid < 0:
+            return False
+        states = self.state_map[self.assignments[niter-1, segid]] 
+        if numpy.any(states == self.istate):
             return False
         return True
 
@@ -168,6 +168,8 @@ class TPAnalysis(object):
         # This depends on that self.succ_lis is pre-sorted!
         curseg = self.succ_list.pop()
 
+        self.assignments = numpy.array(self.assignh5['assignments'])
+
         # Iterate through the requested iterations and begin simultaneous
         # traces.  We want to minimze the number of accesses to the disk
         for iiter in xrange(self.last_iter, 0, -1):
@@ -181,7 +183,6 @@ class TPAnalysis(object):
             # access.
             weights = numpy.array(segindex['weight']) 
             self.parent_ids = numpy.array(segindex['parent_id'])
-            self.assignments = numpy.array(self.assignh5['assignments'][iiter-1])
             
             # Update active paths.  At this point, segments in active_paths are
             # for the current iteration.
@@ -206,7 +207,7 @@ class TPAnalysis(object):
             for activepath in self.active_paths:
                 predecessorid = self.parent_ids[activepath[0]] 
                 weight = activepath[1]
-                if self._check_active(iiter, predecessorid):
+                if self._check_active(iiter-1, predecessorid):
                     duplicate = False
                     # Merge common parents of active paths
                     for ip, other_predecessor in enumerate(predecessorpaths):
