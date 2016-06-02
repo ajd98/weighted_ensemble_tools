@@ -118,7 +118,7 @@ def test_prune_for_independence1():
     finally:
         sys.stdout.close()
         sys.stdout = old_stdout
-    assert count == 3
+    assert count[0] == 3
 
 def test_prune_for_independence2():
     '''Test the prune_for_independence method.'''
@@ -132,7 +132,7 @@ def test_prune_for_independence2():
     finally:
         sys.stdout.close()
         sys.stdout = old_stdout
-    assert count == 2
+    assert count[0] == 2
 
 def test_prune_for_independence3():
     '''Test the prune_for_independence method.'''
@@ -146,7 +146,7 @@ def test_prune_for_independence3():
     finally:
         sys.stdout.close()
         sys.stdout = old_stdout
-    assert count == 1
+    assert count[0] == 1
 
 def test_prune_for_independence4():
     '''Test the prune_for_independence method
@@ -165,7 +165,7 @@ def test_prune_for_independence4():
     finally:
         sys.stdout.close()
         sys.stdout = old_stdout
-    assert count == 2
+    assert count[0] == 2
 
 def test_prune_for_independence5():
     '''Test the prune_for_independence method
@@ -183,7 +183,7 @@ def test_prune_for_independence5():
     finally:
         sys.stdout.close()
         sys.stdout = old_stdout
-    assert count == 3
+    assert count[0] == 3
 
 if __name__ == '__main__':
     test_remove_branch1()
