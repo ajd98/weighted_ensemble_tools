@@ -11,7 +11,7 @@ import matplotlib.pyplot as pyplot
 # Python's internal recursion limit.
 sys.setrecursionlimit(1000000)
 
-class WEGraph:
+class WEGraph(object):
     def __init__(self, westh5, last_iter=None):
         self.westh5 = westh5 
         if last_iter is not None:
@@ -60,7 +60,8 @@ class WEGraph:
                 self.graph.add_node((niter, iseg))
                 if get_props is not None:
                     d = get_props(niter, iseg)
-                    self.graph.node[(niter, iseg)].update(d)
+                    if d is not None:
+                        self.graph.node[(niter, iseg)].update(d)
             
             for iseg in xrange(previous_nsegs):
                 self.graph.add_edge((niter, parentmap[iseg]), (niter+1, iseg))
