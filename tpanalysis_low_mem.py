@@ -19,6 +19,55 @@ import sys
 #        '''
 #        self.activepaths  
 
+class Path(object):
+    def __init__(self, iiter, segid, weight):
+        self.history = [] 
+        self.history.append([iiter, segid, weight])
+
+    def get_current_iter(self):
+        return self.history[-1][0]
+        
+    def get_current_segid(self):
+        return self.history[-1][1]
+
+    def get_current_weight(self):
+        return self.history[-1][2]
+
+    def add_parent(self, iiter, segid):
+        weight = self.get_current_weight()
+        self.history.append((iiter, segid, weight))
+        return
+
+    def update_weight(self, weight):
+        self.history[-1][2] = weight
+        return
+
+class PathManger(object):
+    def __init__(self):
+        self.activepaths = []
+
+    def add_path(self, iiter, segid, weight):
+        self.activepaths.append((iiter, segid, weight))
+
+    def update_path(self, child_iiter, child_segid, parent_iiter, parent_segid):
+        # First, find the child path and get its weight.
+        for ipath, path in self.activepaths:
+            segid = path.get_current_segid()
+            iiter = path.get_current_iter()
+            if iiter == child_iiter and segid == child_segid:
+                childpathid = ipath
+                childweight = path.get_current_weight()
+                break
+           
+        duplicate = False
+        for path in self.activepaths:
+            segid = path.get_current_segid()
+            iiter = path.get_current_iter()
+            # Duplicate parent; merge
+            if iiter == parent_iiter and segid == parent_segid:
+                 
+                
+
 class TPAnalysis(object):
     def __init__(self, westh5, assignh5, succpath, last_iter=None, copy=False):
         '''
