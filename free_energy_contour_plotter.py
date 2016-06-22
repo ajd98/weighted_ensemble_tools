@@ -41,7 +41,7 @@ class ContourPlotter:
                             help='Load data from TEXT_HIST. '
                                  'The file should be ``numpy.loadtxt``-able',
                             type=str)
-        parser.add_argument('--pdist-axes', default=(0,1),
+        parser.add_argument('--pdist-axes', default="(0,1)",
                           dest='pdist_axes',
                           help='Plot PDIST_AXES of the w_pdist file specified '
                                'with ``--pdist-input`` PDIST_AXES should be a '
