@@ -3,6 +3,7 @@
 import argparse
 import h5py
 import math
+import matplotlib
 import numpy
 import pylab
 import scipy.ndimage
@@ -139,7 +140,7 @@ class ContourPlotter:
                             type=int)
 
         # Plot label and general output options
-        parser.add_argument('--output', default=None,
+        parser.add_argument('--output', default='hist.pdf',
                             dest='output_path',
                             help='The filename to which the plot will be saved.'
                                  ' Various image formats are available.  You ' 
@@ -456,6 +457,7 @@ class ContourPlotter:
         '''
         Plot contour levels only. 
         '''
+        ax = self.ax
         X = self.x_mids
         Y = self.y_mids
 
@@ -463,97 +465,101 @@ class ContourPlotter:
         self.Z_data[numpy.isnan(self.Z_data)] = numpy.nanmax(self.Z_data)
 
         # Plot contours.
-        p = pylab.contourf(X, Y, self.Z_data.T, self.zedges, 
-                           cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
-                           )
+        p = ax.contourf(X, Y, self.Z_data.T, self.zedges, 
+                        cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
+                        )
         # Add a colorbar
-        self.cbar = pylab.colorbar()
+        self.cbar = ax.colorbar()
 
     def _do_contourf_l(self):
         '''
         Plot contour levels with black lines between then. 
         '''
+        ax = self.ax
         X = self.x_mids
         Y = self.y_mids
 
         # Take care of 'nan' values
-        self.Z_data[numpy.isnan(self.Z_data)] = numpy.nanmax(self.Z_data)
-        self.Z_curves[numpy.isnan(self.Z_curves)] = numpy.nanmax(self.Z_curves)
+        self.Z_data[numpy.isnan(self.Z_data)] = max(self.zedges)*2
+        self.Z_curves[numpy.isnan(self.Z_curves)] = max(self.zedges)*2
 
         # Plot contours.
         p = pylab.contourf(X, Y, self.Z_data.T, self.zedges, 
-                           cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
-                           )
+                        cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
+                        )
         # Add a colorbar
-        self.cbar = pylab.colorbar()
+        self.cbar = self.fig.colorbar(p)
 
         # Plot contour lines.
-        p = pylab.contour(X, Y, self.Z_curves.T, self.zedges, 
-                          colors='k') 
+        p = ax.contour(X, Y, self.Z_curves.T, self.zedges, 
+                       colors='k') 
 
     def _do_lines(self):
         '''
         Plot contour lines only. 
         '''
+        ax = self.ax
         X = self.x_mids
         Y = self.y_mids
 
         # Take care of 'nan' values
-        self.Z_curves[numpy.isnan(self.Z_curves)] = numpy.nanmax(self.Z_curves)
+        self.Z_curves[numpy.isnan(self.Z_curves)] = max(self.zedges)*2
 
         # Plot contour lines.
-        p = pylab.contour(X, Y, self.Z_curves.T, self.zedges, 
-                           cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
-                           )
+        p = ax.contour(X, Y, self.Z_curves.T, self.zedges, 
+                       cmap=pylab.cm.get_cmap(self.cmap, len(self.zedges)-1)
+                       )
         # Add a colorbar
-        self.cbar = pylab.colorbar()
+        self.cbar = self.fig.colorbar(p)
 
     def _do_histogram(self): 
         '''
         Plot histogram only.
         '''
+        ax = self.ax
         X = self.xedges
         Y = self.yedges
         Zm = ma.array(self.Z_data, mask=numpy.isnan(self.Z_data))
-        self.cmap.set_bad(color='white')
-        p = pylab.pcolormesh(X, Y, Zm.T, 
-                             cmap=self.cmap,
-                             vmin=self.zedges[0],
-                             vmax=self.zedges[-1])
+        p = ax.pcolormesh(X, Y, Zm.T, 
+                          cmap=self.cmap,
+                          vmin=self.zedges[0],
+                          vmax=self.zedges[-1])
         p.set_edgecolor('face')
 
         # Add a colorbar
-        self.cbar = pylab.colorbar()
+        self.cbar = self.fig.colorbar(p)
 
     def _do_histogram_l(self): 
         '''
         Plot histogram with contour lines. 
         '''
+        ax = self.ax
         X = self.xedges
         Y = self.yedges
         Zm = ma.array(self.Z_data, mask=numpy.isnan(self.Z_data))
-        self.cmap.set_bad(color='white')
-        p = pylab.pcolormesh(X, Y, Zm.T, 
-                             cmap=self.cmap,
-                             vmin=self.zedges[0],
-                             vmax=self.zedges[-1])
+        p = ax.pcolormesh(X, Y, Zm.T, 
+                          cmap=self.cmap,
+                          vmin=self.zedges[0],
+                          vmax=self.zedges[-1])
 
         # Get rid of lines between cells
         p.set_edgecolor('face')
 
         # Add a colorbar
-        self.cbar = pylab.colorbar()
+        self.cbar = self.fig.colorbar(p)
 
         X = self.x_mids
         Y = self.y_mids
-        p = pylab.contour(X, Y, self.Z_curves.T, self.zedges, 
-                          colors='k') 
+        p = ax.contour(X, Y, self.Z_curves.T, self.zedges, 
+                       colors='k') 
 
     def _make_plot(self):
         '''
         Make a contour plot/histogram of free energy using the probabilities 
         stored in ``self.H``. 
         '''
+        matplotlib.rcParams['font.size'] = 9
+
         # Convert to free energy
         self.Z = -1*numpy.log(self.H)
 
@@ -574,6 +580,13 @@ class ContourPlotter:
 
         # Specify a color map.
         self.cmap = pylab.cm.cmap_d[self.args.cmap]
+        self.cmap.set_bad(color='white')
+        self.cmap.set_over(color='white')
+        self.cmap.set_under(color='white')
+
+        # Make the figure and axes
+        self.fig = pylab.figure(figsize=(2.42,2))
+        self.ax = self.fig.add_subplot(1,1,1)
         
         if self.plot_mode == 'contourf':
             self._do_contourf()
@@ -614,6 +627,20 @@ class ContourPlotter:
 
         # Add a label to the colorbar.
         self.cbar.set_label('$\Delta G/k_BT$')
+
+        # Remove the top and bottom spines
+        for kw in ('top', 'right'):
+            self.ax.spines[kw].set_visible(False)
+        self.ax.xaxis.set_ticks_position('bottom')
+        self.ax.yaxis.set_ticks_position('left')
+        
+        # Adjust linewidths
+        for kw in ('left', 'bottom'):
+            self.ax.spines[kw].set_linewidth(1.5)
+        self.ax.tick_params(width=1.5, direction='out')
+
+        self.fig.subplots_adjust(bottom=0.2, left=0.2)
+
     def _run_postprocessing(self):
         '''
         Run the user-specified postprocessing function.
