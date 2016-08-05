@@ -3,6 +3,7 @@ from __future__ import print_function
 import numpy 
 import matplotlib
 import matplotlib.pyplot as pyplot
+import scipy.stats
 
 class BFCIEstimate(object):
     def __init__(self, k, t):
@@ -59,7 +60,6 @@ class BFCIEstimate(object):
         pyplot.clf()
         print(se_k_array.mean())
         print(numpy.nanmean(se_k_array))
-        print(se_k_array)
         if plot:
             self._plot(se_k_array)
 
@@ -68,8 +68,12 @@ class BFCIEstimate(object):
         se_k_list = []
         k_list = []
         full_fpt_list = [] 
+
+        interval_width = scipy.stats.t.interval(0.95, nsims)[1]
+
+        true_positive_array = numpy.zeros(nsamples)
         for i in xrange(nsamples):
-            #print("\r{:06d}".format(i), end='')
+            print("\r{:06d}".format(i), end='')
             event_array = numpy.zeros(nsims)
             fpt_list = []
             for sim in xrange(nsims):
@@ -91,10 +95,10 @@ class BFCIEstimate(object):
             k_list.append(mean_k)
             se = k_array.std(ddof=1)
             se_k_list.append(se)
-            print("{:f}:  {:f}".format(mean_k, se))
+            #print("{:f}:  {:f}".format(mean_k, se))
+            if numpy.abs(mean_k - k) < se*interval_width:
+                true_positive_array[i] = 1
         se_k_array = numpy.array(se_k_list)
-        #densities, edges, _ = pyplot.hist(full_fpt_list, bins=100, normed=True)
-        #print(edges)
         xs = numpy.linspace(0,.008,10000)
         pyplot.plot(xs, k*numpy.exp(-k*xs), color='black')
         pyplot.axvline(max(full_fpt_list), color='green') 
@@ -105,6 +109,42 @@ class BFCIEstimate(object):
         print(numpy.nanmean(se_k_array))
         if plot:
             self._plot(se_k_array)
+        return se_k_array.mean(), true_positive_array.mean()
+
+
+    def estimate_3(self, nsims, simlength, nsamples=1000, bootstrap_samples=200, plot=False):
+        k = self.k
+        se_k_list = []
+        k_list = []
+
+        interval_width = scipy.stats.t.interval(0.95, nsims)[1]
+
+        true_positive_array = numpy.zeros(nsamples)
+
+        for i in xrange(nsamples):
+            print("\r{:06d}".format(i), end='')
+            event_array = scipy.stats.poisson.rvs(simlength*k, size=nsims) 
+
+            k_array = numpy.zeros(bootstrap_samples)
+            total_waiting_time = nsims*simlength 
+            for j in xrange(bootstrap_samples):
+                synthetic_event_array = numpy.random.choice(event_array, size=nsims)
+                k_hat = synthetic_event_array.sum()/total_waiting_time
+                k_array[j] = k_hat 
+            mean_k = k_array.mean()
+            k_list.append(mean_k)
+            se = k_array.std(ddof=1)
+            se_k_list.append(se)
+            #print("{:f}:  {:f}".format(mean_k, se))
+            if numpy.abs(mean_k - k) < se*interval_width:
+                true_positive_array[i] = 1
+        se_k_array = numpy.array(se_k_list)
+        print(numpy.array(k_list).mean())
+        print(se_k_array.mean())
+        print(numpy.nanmean(se_k_array))
+        if plot:
+            self._plot(se_k_array)
+        return se_k_array.mean(), true_positive_array.mean()
 
     def _plot(self, se_k_array):
         matplotlib.rcParams['font.size'] = 10
@@ -146,15 +186,26 @@ def main():
     #e.estimate_2(3000, .000001, nsamples=1000, plot=True)
     #e.estimate(nsamples=100000, plot=True)
 
+    nsim_list = [10,50,100,300,500,1000,3000,5000,10000]
     # 7160F50pF66m05
     e = BFCIEstimate(3.86*10**5, 3*1.5*200*.000001)
     #e.estimate_2(3*1.5*200, .000001, nsamples=1000, plot=True)
-    e.estimate_2(900, .000001, nsamples=1000, plot=True)
-    #e.estimate(nsamples=100000, plot=True)
-
+    #e.estimate_2(900, .000001, nsamples=1000, plot=True)
+    #e.estimate_2(300, .000003, nsamples=1000, plot=True)
+    e.estimate(nsamples=100000, plot=True)
+    ys = []
+    actual_type1_rates = []
+    for nsims in nsim_list:
+        simlength = .0009/nsims
+        se_k, type1rate = e.estimate_3(nsims, simlength, nsamples=1000)
+        ys.append(se_k)
+        actual_type1_rates.append(type1rate)
+    fig, (ax1, ax2) = pyplot.subplots(2,1)
+    ax1.plot(nsim_list, ys)
+    ax2.plot(nsim_list, actual_type1_rates)
+    ax2.set_ylim(0,1)
+    ax1.set_ylim(0,25000)
+    pyplot.savefig('test2.pdf')
 
 if __name__ == '__main__':
     main()
-           
-        
-       
