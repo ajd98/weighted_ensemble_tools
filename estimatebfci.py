@@ -22,6 +22,19 @@ class BFCIEstimate(object):
                             ))
 
     def estimate(self, nsamples=10000, plot=False):
+        '''
+        Estimate the size of confidence intervals from brute force simulations
+        with the following setup:
+      
+        - Run a single simulation of length self.t, for a process with rate
+          constant self.k.  Estimate the mean first passage time as the 
+          arithmetic mean of the observed first passage times. Calculate the 
+          standard error of the rate constant using propagation of error, 
+          starting with the standard error of the mean first passage time. 
+
+        - Repeat this process ``nsamples`` times and find the mean of the 
+          observed standard erros.
+        '''
         k = self.k
         t = self.t
         se_k_list = []
@@ -64,6 +77,41 @@ class BFCIEstimate(object):
             self._plot(se_k_array)
 
     def estimate_2(self, nsims, simlength, nsamples=1000, bootstrap_samples=200, plot=False):
+        '''
+        Estimate the size of confidence intervals from brute force simulations
+        with the following setup:
+      
+        - Run ``nsims`` simulations each of length ``simlength`` (in units of 
+          k^{-1}).
+
+        - If we observe an event in a given simulation, we assume that the 
+          simulation never returns to the initial state (e.g., because the
+          reverse rate is slow compared to the timescale of each simulation).
+          Thus, we observe a maximum of one event per simulation.
+
+        - Calculate the aggregate waiting time as the sum of the times before
+          the first event in each simulation.  If we do not observe an event in
+          a given simulation, then that entire simulation is treated as waiting
+          time.
+
+        - Estimate the rate constant as:
+                       (total number of events)/(total waiting time)
+         
+        - Resample with replacement from the set of tuples (EVENT, WAITING_TIME)
+          where EVENT is a boolean indicating whether an event occured in a 
+          given simulation, and WAITING_TIME is that simulation's contribution 
+          to the total waiting time. Resampling generates one synthetic dataset
+          of length ``nsims``.
+
+        - Repeat the resampling procedure ``bootstrap_samples`` times, and 
+          calculate the rate constant from each.
+
+        - The standard deviation of the sampling distribution of rate constant
+          estimates is the standard error of the mean.
+
+        - Repeat this entire procedure ``nsamples`` times, and return the mean
+          of the observed standard errors.
+        '''
         k = self.k
         se_k_list = []
         k_list = []
@@ -113,6 +161,35 @@ class BFCIEstimate(object):
 
 
     def estimate_3(self, nsims, simlength, nsamples=1000, bootstrap_samples=200, plot=False):
+        '''
+        Estimate the size of confidence intervals from brute force simulations
+        with the following setup:
+      
+        - Run ``nsims`` simulations each of length ``simlength`` (in units of 
+          k^{-1}).
+
+        - If we observe an event in a simulation, that simulation immediately 
+          returns to the initial state.  Thus all simulation time is waiting 
+          time. Moreover, we can observe multiple events per simulation, with
+                      (number of events) ~ Poi(k*simlength)
+
+        - Estimate the rate constant as:
+                       (total number of events)/(total waiting time)
+         
+        - Resample with replacement from the set of values (NUMBER_OF_EVENTS)  
+          where NUMBER_OF_EVENTS is the number of events observed in a given
+          simulation. Resampling generates one synthetic dataset of length 
+          ``nsims``.
+
+        - Repeat the resampling procedure ``bootstrap_samples`` times, and 
+          calculate the rate constant from each.
+
+        - The standard deviation of the sampling distribution of rate constant
+          estimates is the standard error of the mean.
+
+        - Repeat this entire procedure ``nsamples`` times, and return the mean
+          of the observed standard errors.
+        '''
         k = self.k
         se_k_list = []
         k_list = []
@@ -120,6 +197,9 @@ class BFCIEstimate(object):
         interval_width = scipy.stats.t.interval(0.95, nsims)[1]
 
         true_positive_array = numpy.zeros(nsamples)
+        t_positive_array = numpy.zeros(nsamples)
+        lbi = int(round(bootstrap_samples*0.025,0))
+        ubi = int(round(bootstrap_samples*0.975,0))
 
         for i in xrange(nsamples):
             print("\r{:06d}".format(i), end='')
@@ -137,16 +217,24 @@ class BFCIEstimate(object):
             se_k_list.append(se)
             #print("{:f}:  {:f}".format(mean_k, se))
             if numpy.abs(mean_k - k) < se*interval_width:
-                true_positive_array[i] = 1
+                t_positive_array[i] = 1
+            k_array.sort()
+            if (k_array[lbi] <= k) and (k_array[ubi] >= k):
+                true_positive_array[i] = 1 
         se_k_array = numpy.array(se_k_list)
-        print(numpy.array(k_list).mean())
-        print(se_k_array.mean())
-        print(numpy.nanmean(se_k_array))
+        print("\nMean k from bootstrapping: {:e}"\
+              .format(numpy.array(k_list).mean()))
+        print('Mean standard error: {:e}'.format(se_k_array.mean()))
+        print('Mean standard error, ignoring NaNs: {:e}'\
+              .format(numpy.nanmean(se_k_array)))
         if plot:
             self._plot(se_k_array)
-        return se_k_array.mean(), true_positive_array.mean()
+        return se_k_array.mean(), true_positive_array.mean(), t_positive_array.mean()
 
     def _plot(self, se_k_array):
+        '''
+        Plot and save the observed distribution of standard errors ``se_k_array``
+        '''
         matplotlib.rcParams['font.size'] = 10
         hist, edges = numpy.histogram(se_k_array, density=True, bins=100) 
         ys = self.convert_to_step(hist) 
