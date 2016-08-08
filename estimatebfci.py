@@ -115,49 +115,47 @@ class BFCIEstimate(object):
         k = self.k
         se_k_list = []
         k_list = []
-        full_fpt_list = [] 
-
         interval_width = scipy.stats.t.interval(0.95, nsims)[1]
-
+        t_positive_array = numpy.zeros(nsamples)
         true_positive_array = numpy.zeros(nsamples)
+
         for i in xrange(nsamples):
             print("\r{:06d}".format(i), end='')
             event_array = numpy.zeros(nsims)
-            fpt_list = []
-            for sim in xrange(nsims):
-                rand = numpy.random.random()
-                fpt = -numpy.log(1-rand)/k
-                if fpt < simlength:
-                    full_fpt_list.append(fpt)
-                    fpt_list.append(fpt)
-                    event_array[sim] = 1
+            rand = numpy.random.random(size=nsims)
+            fpt = -numpy.log(1-rand)/k
+            event_array = (fpt <= simlength)
+            waiting_time_array = numpy.zeros(event_array.shape)
+            waiting_time_array[:] = simlength 
+            waiting_time_array[event_array] = fpt[event_array]
 
-            fpt_list = numpy.array(fpt_list)
             k_array = numpy.zeros(bootstrap_samples)
-            total_waiting_time = (nsims-fpt_list.shape[0])*simlength + fpt_list.sum()
+            total_waiting_time = waiting_time_array.sum() 
+            pairs = numpy.vstack(event_array, waiting_time_array).transpose()
             for j in xrange(bootstrap_samples):
-                synthetic_event_array = numpy.random.choice(event_array, size=nsims)
-                k_hat = synthetic_event_array.sum()/total_waiting_time
+                synthetic_pairs_array = numpy.random.choice(event_array, size=nsims)
+                synthetic_pairs_array = \
+                    pairs[numpy.random.randint(pairs.shape[0], size=nsims), :] 
+                k_hat = synthetic_pairs_array[:,0].sum()/synthetic_pairs_array[:,1].sum()
                 k_array[j] = k_hat 
             mean_k = k_array.mean()
             k_list.append(mean_k)
             se = k_array.std(ddof=1)
             se_k_list.append(se)
-            #print("{:f}:  {:f}".format(mean_k, se))
             if numpy.abs(mean_k - k) < se*interval_width:
-                true_positive_array[i] = 1
+                t_positive_array[i] = 1
+            k_array.sort()
+            if (k_array[lbi] <= k) and (k_array[ubi] >= k):
+                true_positive_array[i] = 1 
         se_k_array = numpy.array(se_k_list)
-        xs = numpy.linspace(0,.008,10000)
-        pyplot.plot(xs, k*numpy.exp(-k*xs), color='black')
-        pyplot.axvline(max(full_fpt_list), color='green') 
-        pyplot.savefig('durations.pdf')
-        pyplot.clf()
-        print(numpy.array(k_list).mean())
-        print(se_k_array.mean())
-        print(numpy.nanmean(se_k_array))
+        print("\nMean k from bootstrapping: {:e}"\
+              .format(numpy.array(k_list).mean()))
+        print('Mean standard error: {:e}'.format(se_k_array.mean()))
+        print('Mean standard error, ignoring NaNs: {:e}'\
+              .format(numpy.nanmean(se_k_array)))
         if plot:
             self._plot(se_k_array)
-        return se_k_array.mean(), true_positive_array.mean()
+        return se_k_array.mean(), true_positive_array.mean(), t_positive_array.mean()
 
 
     def estimate_3(self, nsims, simlength, nsamples=1000, bootstrap_samples=200, plot=False):
