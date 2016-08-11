@@ -3,7 +3,34 @@ from __future__ import print_function
 import numpy 
 import matplotlib
 import matplotlib.pyplot as pyplot
+import multiprocessing
 import scipy.stats
+
+def estimate_k_from_short_simulations(arguments):
+        k, simlength, nsims,  bootstrap_samples, lbi, ubi, interval_width = \
+            arguments 
+
+        event_array = scipy.stats.poisson.rvs(simlength*k, size=nsims) 
+        k_array = numpy.zeros(bootstrap_samples)
+        total_waiting_time = nsims*simlength 
+        for j in xrange(bootstrap_samples):
+            synthetic_event_array = numpy.random.choice(event_array, size=nsims)
+            k_hat = synthetic_event_array.sum()/total_waiting_time
+            k_array[j] = k_hat 
+        mean_k = k_array.mean()
+        se = k_array.std(ddof=1)
+        if numpy.abs(mean_k - k) < se*interval_width:
+            true_positive_t = 1
+        else:
+            true_positive_t = 0
+            
+        k_array.sort()
+        if (k_array[lbi] <= k) and (k_array[ubi] >= k):
+            true_positive = 1
+        else:
+            true_positive = 0
+
+        return mean_k, se, true_positive, true_positive_t
 
 class BFCIEstimate(object):
     def __init__(self, k, t):
@@ -158,7 +185,8 @@ class BFCIEstimate(object):
         return se_k_array.mean(), true_positive_array.mean(), t_positive_array.mean()
 
 
-    def estimate_3(self, nsims, simlength, nsamples=1000, bootstrap_samples=200, plot=False):
+    def estimate_3(self, nsims, simlength, nsamples=1000, bootstrap_samples=200,
+                   plot=False, alpha=0.05, nprocs=1):
         '''
         Estimate the size of confidence intervals from brute force simulations
         with the following setup:
@@ -189,41 +217,47 @@ class BFCIEstimate(object):
           of the observed standard errors.
         '''
         k = self.k
-        se_k_list = []
-        k_list = []
+        se_k_array = numpy.zeros(nsamples) 
+        k_array = numpy.zeros(nsamples) 
 
-        interval_width = scipy.stats.t.interval(0.95, nsims)[1]
+        interval_width = scipy.stats.t.interval(1-alpha, nsims)[1]
 
         true_positive_array = numpy.zeros(nsamples)
         t_positive_array = numpy.zeros(nsamples)
-        lbi = int(round(bootstrap_samples*0.025,0))
-        ubi = int(round(bootstrap_samples*0.975,0))
+        lbi = int(round(bootstrap_samples*alpha/2,0))
+        ubi = int(round(bootstrap_samples*(1-alpha/2),0))
 
-        for i in xrange(nsamples):
-            print("\n{:06d}".format(i), end='')
-            event_array = scipy.stats.poisson.rvs(simlength*k, size=nsims) 
+        if nprocs == 1:
+            for i in xrange(nsamples):
 
-            k_array = numpy.zeros(bootstrap_samples)
-            total_waiting_time = nsims*simlength 
-            print(" | starting bootstrap: ", end='')
-            for j in xrange(bootstrap_samples):
-                synthetic_event_array = numpy.random.choice(event_array, size=nsims)
-                if j%10==0: print("+", end='')
-                k_hat = synthetic_event_array.sum()/total_waiting_time
-                k_array[j] = k_hat 
-            mean_k = k_array.mean()
-            k_list.append(mean_k)
-            se = k_array.std(ddof=1)
-            se_k_list.append(se)
-            #print("{:f}:  {:f}".format(mean_k, se))
-            if numpy.abs(mean_k - k) < se*interval_width:
-                t_positive_array[i] = 1
-            k_array.sort()
-            if (k_array[lbi] <= k) and (k_array[ubi] >= k):
-                true_positive_array[i] = 1 
-        se_k_array = numpy.array(se_k_list)
+                mean_k, se, true_positive, true_positive_t = \
+                    estimate_k_from_short_simulations([k, simlength, nsims, 
+                                               bootstrap_samples, lbi, ubi,
+                                               interval_width])
+                k_array[i] = mean_k
+                se_k_array[i] = se
+                t_positive_array[i] = true_positive_t
+                true_positive_array[i] = true_positive 
+        elif nprocs > 1:
+             pool = multiprocessing.Pool(processes=nprocs)
+             for i, results in enumerate(pool.imap_unordered(
+                     estimate_k_from_short_simulations,
+                     [[k, simlength, nsims, bootstrap_samples, lbi, ubi,
+                      interval_width] for j in range(nsamples)])):
+                 mean_k = results[0]
+                 se = results[1]
+                 true_positive = results[2]
+                 true_positive_t = results[3]
+
+                 k_array[i] = mean_k 
+                 se_k_array[i] = se
+                 true_positive_array[i] = true_positive
+                 t_positive_array[i] = true_positive_t
+        else:
+            raise ValueError('Need at least one processor')
+
         print("\nMean k from bootstrapping: {:e}"\
-              .format(numpy.array(k_list).mean()))
+              .format(k_array.mean()))
         print('Mean standard error: {:e}'.format(se_k_array.mean()))
         print('Mean standard error, ignoring NaNs: {:e}'\
               .format(numpy.nanmean(se_k_array)))
