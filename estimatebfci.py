@@ -200,13 +200,15 @@ class BFCIEstimate(object):
         ubi = int(round(bootstrap_samples*0.975,0))
 
         for i in xrange(nsamples):
-            print("\r{:06d}".format(i), end='')
+            print("\n{:06d}".format(i), end='')
             event_array = scipy.stats.poisson.rvs(simlength*k, size=nsims) 
 
             k_array = numpy.zeros(bootstrap_samples)
             total_waiting_time = nsims*simlength 
+            print(" | starting bootstrap: ", end='')
             for j in xrange(bootstrap_samples):
                 synthetic_event_array = numpy.random.choice(event_array, size=nsims)
+                if j%10==0: print("+", end='')
                 k_hat = synthetic_event_array.sum()/total_waiting_time
                 k_array[j] = k_hat 
             mean_k = k_array.mean()
@@ -252,46 +254,3 @@ class BFCIEstimate(object):
         ax.set_ylabel('probability')
         ax.set_xlim((0, edges[-1]))
         pyplot.savefig('err_dist.pdf')
-        
-def main():
-    # 7160, N -> N'
-    #e = BFCIEstimate(2.15*10**4, .003)
-    #e.estimate(nsamples=100000, plot=True)
-    #e.estimate_2(3000, .000001, nsamples=1000, plot=True)
-
-    # 7160, N' -> N
-    #e = BFCIEstimate(12.1, .003)
-    #e.estimate(nsamples=100000, plot=True)
-
-    # 60602, N' -> N
-    #e = BFCIEstimate(12.1, .003)
-    #e.estimate(nsamples=100000, plot=True)
-
-    # 60602, N -> N'
-    #e = BFCIEstimate(1.39*10**3, .003)
-    #e.estimate_2(3000, .000001, nsamples=1000, plot=True)
-    #e.estimate(nsamples=100000, plot=True)
-
-    nsim_list = [10,50,100,300,500,1000,3000,5000,10000]
-    # 7160F50pF66m05
-    e = BFCIEstimate(3.86*10**5, 3*1.5*200*.000001)
-    #e.estimate_2(3*1.5*200, .000001, nsamples=1000, plot=True)
-    #e.estimate_2(900, .000001, nsamples=1000, plot=True)
-    #e.estimate_2(300, .000003, nsamples=1000, plot=True)
-    e.estimate(nsamples=100000, plot=True)
-    ys = []
-    actual_type1_rates = []
-    for nsims in nsim_list:
-        simlength = .0009/nsims
-        se_k, type1rate = e.estimate_3(nsims, simlength, nsamples=1000)
-        ys.append(se_k)
-        actual_type1_rates.append(type1rate)
-    fig, (ax1, ax2) = pyplot.subplots(2,1)
-    ax1.plot(nsim_list, ys)
-    ax2.plot(nsim_list, actual_type1_rates)
-    ax2.set_ylim(0,1)
-    ax1.set_ylim(0,25000)
-    pyplot.savefig('test2.pdf')
-
-if __name__ == '__main__':
-    main()
