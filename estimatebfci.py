@@ -6,6 +6,11 @@ import matplotlib.pyplot as pyplot
 import multiprocessing
 import scipy.stats
 
+def taskgenerator(k, simlength, nsims, bootstrap_samples, lbi, ubi, 
+                  interval_width, nsamples):
+    for i in xrange(nsamples):
+        yield [k, simlength, nsims, bootstrap_samples, lbi, ubi, interval_width] 
+
 def estimate_k_from_short_simulations(arguments):
         k, simlength, nsims,  bootstrap_samples, lbi, ubi, interval_width = \
             arguments 
@@ -240,10 +245,13 @@ class BFCIEstimate(object):
                 true_positive_array[i] = true_positive 
         elif nprocs > 1:
              pool = multiprocessing.Pool(processes=nprocs)
+             taskgen = taskgenerator(k, simlength, nsims, bootstrap_samples,
+                                     lbi, ubi, interval_width, nsamples)
              for i, results in enumerate(pool.imap_unordered(
                      estimate_k_from_short_simulations,
-                     [[k, simlength, nsims, bootstrap_samples, lbi, ubi,
-                      interval_width] for j in range(nsamples)])):
+                     taskgen)):
+                     #[[k, simlength, nsims, bootstrap_samples, lbi, ubi,
+                     # interval_width] for j in range(nsamples)])):
                  mean_k = results[0]
                  se = results[1]
                  true_positive = results[2]
