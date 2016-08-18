@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 from __future__ import print_function
+import itertools
 import numpy 
 import matplotlib
 import matplotlib.pyplot as pyplot
 import multiprocessing
 import scipy.stats
+import time
 
 def taskgenerator(k, simlength, nsims, bootstrap_samples, lbi, ubi, 
                   interval_width, nsamples):
@@ -245,22 +247,39 @@ class BFCIEstimate(object):
                 true_positive_array[i] = true_positive 
         elif nprocs > 1:
              pool = multiprocessing.Pool(processes=nprocs)
+
+             # Multiprocessing is useful when there are large numbers of 
+             # samples to generate. Building a list for each sample may consume
+             # too much memory.  Instead, use a generator.
              taskgen = taskgenerator(k, simlength, nsims, bootstrap_samples,
                                      lbi, ubi, interval_width, nsamples)
-             for i, results in enumerate(pool.imap_unordered(
-                     estimate_k_from_short_simulations,
-                     taskgen)):
-                     #[[k, simlength, nsims, bootstrap_samples, lbi, ubi,
-                     # interval_width] for j in range(nsamples)])):
-                 mean_k = results[0]
-                 se = results[1]
-                 true_positive = results[2]
-                 true_positive_t = results[3]
 
-                 k_array[i] = mean_k 
-                 se_k_array[i] = se
-                 true_positive_array[i] = true_positive
-                 t_positive_array[i] = true_positive_t
+             # Pool's mapping functions will consume the entire generator. Use
+             # slicing to circumvent this issue.
+             N = 10 # Number of samples to evaluate each time through the 
+                     # "while" loop
+             i = 0 # keeps track of the number of times through the "while" loop
+             while True:
+                 print("Outer index: {:d}".format(i))
+                 resultlist = pool.map(
+                                estimate_k_from_short_simulations,
+                                itertools.islice(taskgen, N))
+                 if resultlist:
+                     for j, results in enumerate(resultlist): 
+                         mean_k = results[0]
+                         se = results[1]
+                         true_positive = results[2]
+                         true_positive_t = results[3]
+
+                         k_array[i*N+j] = mean_k 
+                         se_k_array[i*N+j] = se
+                         true_positive_array[i*N+j] = true_positive
+                         t_positive_array[i*N+j] = true_positive_t
+                     time.sleep(.1)
+                 else:
+                     break
+                 del resultlist
+                 i += 1
         else:
             raise ValueError('Need at least one processor')
 
