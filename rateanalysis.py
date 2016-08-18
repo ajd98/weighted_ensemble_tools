@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from histogram_durations import DurationHistogram
+from durationhistogram import DurationHistogram
 import numpy
 import h5py
 import matplotlib.pyplot as pyplot
