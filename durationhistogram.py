@@ -14,19 +14,26 @@ class DurationHistogram(object):
     def __init__(self):
         pass
 
-    def from_list(self, kinetics_path_list, lastiter=2000, **kwargs):
+    def from_list(self, kinetics_path_list, fstate, lastiter=2000, **kwargs):
         weights = []
         durations = []
         for path in kinetics_path_list: 
             print('Loading {:s}'.format(path))
             kinetics_file = h5py.File(path, 'r')
             if lastiter is not None:
-                where = numpy.where(kinetics_file['durations'][:lastiter]\
-                                                 ['weight'] > 0)
+                where = numpy.where(
+                    numpy.logical_and(kinetics_file['durations'][:lastiter]\
+                                                   ['weight'] > 0,
+                                      kinetics_file['durations'][:lastiter]\
+                                                   ['fstate'] == fstate))
                 d = kinetics_file['durations'][:lastiter]['duration'] 
                 w = kinetics_file['durations'][:lastiter]['weight']
             else:
-                where = numpy.where(kinetics_file['durations']['weight'] > 0)
+                where = numpy.where(
+                    numpy.logical_and(kinetics_file['durations']\
+                                                   ['weight'] > 0,
+                                      kinetics_file['durations']\
+                                                   ['fstate'] == fstate))
                 d = kinetics_file['durations']['duration'] 
                 w = kinetics_file['durations']['weight']
             for i in range(where[1].shape[0]):
@@ -45,14 +52,32 @@ class DurationHistogram(object):
         self.histogram(durations, weights, lastiter=lastiter, **kwargs)
         return
 
-    def integrate(self, hist, edges):
-        deltas = numpy.array([edges[i+1] - edges[i] \
-                              for i in range(len(edges)-1)])
-        integral = (deltas*hist).sum()
+    def integrate(self, hist, edges, lb=None, ub=None):
+        if lb is None:
+           lb = edges[0]
+
+        if ub is None:
+           ub = edges[-1]
+
+        integral = 0.0
+       
+        setbreak = False
+        for i, leftedge in enumerate(edges[:-1]):
+            if leftedge >= lb:
+                rightedge = edges[i+1] 
+                if rightedge > ub:
+                    rightedge = ub
+                    setbreak = True
+                delta = rightedge-leftedge 
+                integral += hist[i]*delta
+                if setbreak:
+                    break
+
         return integral
 
     def normalize_density(self):
         integral = self.integrate(self.hist, self.edges)
+        print("normalizing event duration distribution by factor: {:f}".format(integral))
         self.hist /= integral
         return 
          
@@ -60,15 +85,18 @@ class DurationHistogram(object):
                   correction=True, **kwargs):
         lb = 0
         ub = numpy.ceil(durations.max()) 
-        edges = numpy.arange(lb, ub+binwidth, binwidth)
+        #edges = numpy.arange(lb, ub+binwidth, binwidth, dtype=float)
+        edges = numpy.arange(lb, lastiter+binwidth, binwidth, dtype=float)
+        print(edges)
         hist, _ = numpy.histogram(durations, weights=weights, bins=edges,
                                   density=True)
 
         print(correction)
         if correction:
-            factors = 1/(lastiter - numpy.arange(0, lastiter, 
-                                                 binwidth, dtype=float))
-            hist = hist*factors[:hist.shape[0]] 
+            halfwidth = binwidth/2
+            factors = 1/numpy.arange(lastiter-halfwidth, lb-halfwidth, 
+                                     -1*binwidth, dtype=float)
+            hist = hist*factors#[:hist.shape[0]] 
         print(kwargs)
         self.hist = hist
         self.edges = edges
@@ -120,7 +148,7 @@ def main():
                 'kinetics_files/60_60_NP2N_{:d}_kinetics.h5'.format(i)\
                 for i in range(1,11)]
     pathlist = ['./new_analysis/kinetics_files/71_60_N2NP_{:d}_kinetics.h5'\
-                .format(i) for i in range(1,11)]
+                .format(i) for i in range(1,2)]
     h = DurationHistogram()
     h.from_list(pathlist, correction=True, lastiter=2000, binwidth=10)
     h.plot_hist(color='blue')
