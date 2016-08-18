@@ -9,18 +9,18 @@ class RateAnalysis(object):
         pass
 
     def cum_mean(self, data, axis=0):
-        N_arr = numpy.arange(1, data.shape[0]+1)
+        N_arr = numpy.arange(1, data.shape[axis]+1)
         cumsum = numpy.cumsum(data, axis=axis)
 
-        if axis is not 0:
-            numpy.swapaxes(cumsum, 0, axis)
+        if axis != 0:
+            cumsum = numpy.swapaxes(cumsum, 0, axis)
         # Iterate over values along the 0th axis, which is now the one we want 
         # to cumulatively average over.
         for i in xrange(cumsum.shape[0]):
-            cumsum[i] /= N_arr[i]
+            cumsum[i,:] = cumsum[i]/N_arr[i]
 
-        if axis is not 0:
-            numpy.swapaxes(cumsum, 0, axis)
+        if axis != 0:
+            cumsum = numpy.swapaxes(cumsum, 0, axis)
              
         return cumsum 
 
@@ -144,36 +144,41 @@ class RateAnalysis(object):
           histogram that estimates the event duration distribution
         '''
         self.durationhistogram = DurationHistogram() 
-        self.durationhistogram.from_list(kineticsH5paths, lastiter=li, 
+        self.durationhistogram.from_list(kineticsH5paths, fstate, lastiter=li, 
                                          correction=True, 
                                          binwidth=durationbinwidth)
 
         flux_arr = self.load_total_flux(kineticsH5paths, fstate, 1, li)
-        flux_arr = self.cum_mean(flux_arr, axis=0)
+        summed_flux_arr = numpy.cumsum(flux_arr, axis=1)
+
+        # \integral_0^t g(tau) dtau
+        cumulative_integral = numpy.zeros(flux_arr.shape[1]) 
         for i in xrange(flux_arr.shape[1]):
-            correction_factor = self.durationhistogram.integrate(
+            val = self.durationhistogram.integrate(
                                     self.durationhistogram.hist,
                                     self.durationhistogram.edges,
-                                    ub = i)
+                                    ub = i+0.5)
+            cumulative_integral[i] = val 
+
+        for i in xrange(flux_arr.shape[1]):
+            correction_factor = numpy.trapz(cumulative_integral[:i+1])
             if i % 100 == 0: print(correction_factor)
-            flux_arr[:,i] /= correction_factor
+            summed_flux_arr[:,i] /= correction_factor
 
         
-        rates = flux_arr 
+        rates = summed_flux_arr 
         rate_mean = rates.mean(axis=0)     
         rate_se = rates.std(axis=0, ddof=1)/numpy.sqrt(rates.shape[0])
         
-        rate_mean *= (10**10)
-        rate_se *= (10**10)
         loglb = numpy.log(rate_mean-rate_se)/numpy.log(10)
         logub = numpy.log(rate_mean+rate_se)/numpy.log(10)
         logmean = numpy.log(rate_mean)/numpy.log(10)
      
         xs = numpy.arange(1, li, 1)
-        xs = xs*.05
+        xs = xs*.1
 
-        print("mean rate is {:e}".format(rate_mean[-1]))
-        print("se_k is {:e}".format(rate_se[-1]))
+        print(u"mean rate is {:e} (\u03c4$^{{-1}}$)".format(rate_mean[-1]))
+        print(u"se_k is {:e} (\u03c4$^{{-1}}$)".format(rate_se[-1]))
 
         if ax is not None:
             print('plotting')
@@ -181,19 +186,3 @@ class RateAnalysis(object):
             ax.plot(xs, logmean, color=(0,0,0,1))
     
         return rate_mean, rate_se 
-
-def test():
-    pathlist = ['./new_analysis/kinetics_files/71_60_N2NP_{:d}_kinetics.h5'\
-                .format(i) for i in range(1,11)]
-    ra = RateAnalysis()
-
-    fig = pyplot.gcf() 
-    fig.set_size_inches(4,4)
-    ax = fig.add_subplot(1,1,1)
-
-    ra.calc_rate_from_total_flux(pathlist, 1, 2000, ax=ax, durationbinwidth=1)
-    pyplot.savefig('test.pdf')
-
-
-if __name__ == "__main__":
-    test()
