@@ -177,7 +177,7 @@ class ContourPlotter:
 
 
         # Plot style and data smoothing options
-        parser.add_argument('--cmap', default='hot_r',
+        parser.add_argument('--cmap', default='magma_r',
                             dest='cmap',
                             help='Use the colormap CMAP for the z-axis of the ' 
                                  'plot. Ex: ``hot``,``jet``,``RdBu``. '
